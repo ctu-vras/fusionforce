@@ -1,0 +1,30 @@
+#### Plugins ########
+plugin_config_file: '$(rospack find fusionforce_navigation)/config/elevation_mapping_cupy/setups/marv/plugin_config.yaml'
+
+pointcloud_channel_fusions:
+  rgb: 'color'
+  default: 'average'
+
+image_channel_fusions:
+  rgb: 'color'
+  default: 'exponential'
+  feat_.*: 'exponential'
+
+subscribers:
+  lidar:
+    topic_name: '/points'
+    data_type: pointcloud
+  front_cam:
+    topic_name: '/camera_front/image_color/compressed'
+    camera_info_topic_name: '/camera_front/camera_info'
+    data_type: image
+
+publishers:
+  elevation_map_raw:
+    layers: ['elevation', 'traversability', 'variance', 'rgb']
+    basic_layers: ['elevation']
+    fps: 5.0
+  elevation_map_filter:
+    layers: ['min_filter', 'smooth', 'inpaint', 'elevation']
+    basic_layers: ['min_filter']
+    fps: 3.0

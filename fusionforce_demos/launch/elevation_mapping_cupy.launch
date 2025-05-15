@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+
+<launch>
+  <arg name="rviz" default="true" doc="Launch RViz for data visualization or not"/>
+  <arg name="fixed_frame" default="odom" doc="Fixed frame for TFs"/>
+  <arg name="bag" doc="Path to a bag file"/>
+
+  <!-- Play bag file -->
+  <param name="use_sim_time" value="true"/>
+  <node name="rosbag" pkg="rosbag" type="play" args="--clock --loop $(arg bag)">
+    <remap from="points_filtered_kontron" to="points"/>
+  </node>
+
+  <!-- Camera image decompressing -->
+  <node name="img_decompressor" pkg="image_transport" type="republish" output="screen"
+        args="compressed in:=/camera_front/image_color raw out:=/camera_front/image_color"/>
+
+  <!-- Elevation Mapping Cupy -->
+  <node if="1" pkg="elevation_mapping_cupy" type="elevation_mapping_node" name="elevation_mapping" output="screen">
+    <rosparam command="load" file="$(find fusionforce_navigation)/config/elevation_mapping_cupy/setups/marv/core.yaml"/>
+    <rosparam command="load" file="$(find fusionforce_navigation)/config/elevation_mapping_cupy/setups/marv/sensors.yaml"/>
+    <remap from="/elevation_mapping/elevation_map_filter" to="/grid_map/terrain"/>
+  </node>
+
+  <!-- Launch RViz with the demo configuration. -->
+  <node if="$(arg rviz)" name="rviz" pkg="rviz" type="rviz" args="-d $(dirname)/../config/rviz/fusionforce.rviz"/>
+
+</launch>

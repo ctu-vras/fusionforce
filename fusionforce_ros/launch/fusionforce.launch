@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<launch>
+    <arg name="robot" default="marv" doc="Robot type: tradr or marv"/>
+    <arg name="lss_config_path" default="$(dirname)/../../fusionforce/config/lss_cfg.yaml"/>
+    <arg name="weights" default="$(dirname)/../../fusionforce/config/weights/lss/val.pth"/>
+    <arg name="img_topics" default="['/camera_front/image_color/compressed',
+                                     '/camera_left/image_color/compressed',
+                                     '/camera_rear/image_color/compressed',
+                                     '/camera_right/image_color/compressed']"/>
+    <arg name="camera_info_topics" default="['/camera_front/camera_info',
+                                             '/camera_left/camera_info',
+                                             '/camera_rear/camera_info',
+                                             '/camera_right/camera_info']"/>
+    <!-- fusionforce node -->
+    <node name="fusionforce" pkg="fusionforce" type="fusionforce_node.py" output="screen">
+        <rosparam subst_value="true">
+            lss_config_path: $(arg lss_config_path)
+            img_topics: $(arg img_topics)
+            camera_info_topics: $(arg camera_info_topics)
+            weights: $(arg weights)
+            robot_frame: 'base_link'
+            max_msgs_delay: 0.2
+            max_age: 1.2
+            robot: $(arg robot)
+        </rosparam>
+        <remap from="height_map" to="height_map"/>
+    </node>
+</launch>
