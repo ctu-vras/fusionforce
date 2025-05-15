@@ -17,17 +17,17 @@ from terrain_encoder import TerrainEncoder
 import rospkg
 
 
-class MonoForce(TerrainEncoder):
+class FusionForce(TerrainEncoder):
     """
-    MonoForce node for predicting terrain properties and robot's trajectories from RGB images.
+    FusionForce node for predicting terrain properties and robot's trajectories from RGB images.
     """
     def __init__(self, lss_cfg):
-        super(MonoForce, self).__init__(lss_cfg)
+        super(FusionForce, self).__init__(lss_cfg)
         # differentiable physics configs
         self.robot = rospy.get_param('~robot', 'robot')
         self.allow_backward = rospy.get_param('~allow_backward', True)
         self.dphys_cfg = DPhysConfig(robot=self.robot)
-        self.dphysics = DPhysics(self.dphys_cfg, device=self.device)
+        self.physics_engine = DPhysics(self.dphys_cfg, device=self.device)
         self.controls = self.init_controls()
         rospy.loginfo('Control inputs are set up. Shape: %s' % str(self.controls.shape))
         self.path_cost_min = np.inf
@@ -37,7 +37,7 @@ class MonoForce(TerrainEncoder):
         self.sampled_paths_pub = rospy.Publisher('/sampled_paths', MarkerArray, queue_size=1)
         self.lc_path_pub = rospy.Publisher('/lower_cost_path', Path, queue_size=1)
         self.path_costs_pub = rospy.Publisher('/path_costs', Float32MultiArray, queue_size=1)
-        rospy.loginfo('MonoForce node is ready')
+        rospy.loginfo('FusionForce node is ready')
 
     def init_controls(self):
         controls_front, _ = generate_controls(n_trajs=self.dphys_cfg.n_sim_trajs // 2,
@@ -72,7 +72,7 @@ class MonoForce(TerrainEncoder):
         state0 = (x, xd, R, omega)
 
         # simulate trajectories
-        states, forces = self.dphysics(grid_maps, controls=controls, state=state0, friction=frictions)
+        states, forces = self.physics_engine(grid_maps, controls=controls, state=state0, friction=frictions)
         Xs, Xds, Rs, Omegas = states
         assert Xs.shape == (self.dphys_cfg.n_sim_trajs, n_sim_steps, 3)
         assert Rs.shape == (self.dphys_cfg.n_sim_trajs, n_sim_steps, 3, 3)
@@ -149,8 +149,8 @@ class MonoForce(TerrainEncoder):
         info_msgs = msgs[n // 2:]
         inputs = self.get_lss_inputs(img_msgs, info_msgs)
         inputs = [i.to(self.device) for i in inputs]
-        out = self.model(*inputs)
-        height_terrain, friction = out['terrain'], out['friction']
+        terrain = self.terrain_encoder(*inputs)
+        height_terrain, friction = terrain['terrain'], terrain['friction']
         rospy.loginfo('Predicted height map shape: %s' % str(height_terrain.shape))
 
         grid_maps = height_terrain.squeeze(1).repeat(self.dphys_cfg.n_sim_trajs, 1, 1)
@@ -189,14 +189,13 @@ class MonoForce(TerrainEncoder):
 def main():
     rospy.init_node('fusionforce', anonymous=True, log_level=rospy.DEBUG)
     lib_path = rospkg.RosPack().get_path('fusionforce').replace('fusionforce_ros', 'fusionforce')
-    rospy.loginfo('MonoForce library path: %s' % lib_path)
 
     # load configs
     lss_config_path = rospy.get_param('~lss_config_path', os.path.join(lib_path, 'config/lss_cfg.yaml'))
     assert os.path.isfile(lss_config_path), 'LSS config file %s does not exist' % lss_config_path
     lss_cfg = read_yaml(lss_config_path)
 
-    node = MonoForce(lss_cfg=lss_cfg)
+    node = FusionForce(lss_cfg=lss_cfg)
     node.start()
     node.spin()
 

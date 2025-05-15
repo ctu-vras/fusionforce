@@ -11,6 +11,8 @@ from grid_map_msgs.msg import GridMap
 from fusionforce.ros import height_map_to_gridmap_msg
 from fusionforce.utils import read_yaml, timing, load_calib
 from fusionforce.models.terrain_encoder.lss import LiftSplatShoot
+from fusionforce.models.terrain_encoder.voxelnet import VoxelNet
+from fusionforce.models.terrain_encoder.bevfusion import BEVFusion
 from fusionforce.models.terrain_encoder.utils import img_transform, normalize_img, sample_augmentation
 from sensor_msgs.msg import CompressedImage, CameraInfo
 from time import time
@@ -20,7 +22,7 @@ from PIL import Image as PILImage
 from ros_numpy import numpify
 from scipy.spatial.transform import Rotation
 
-torch.set_default_dtype(torch.float32)
+
 lib_path = os.path.join(__file__, '..', '..', '..')
 
 
@@ -31,15 +33,6 @@ class TerrainEncoder:
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         rate = rospy.get_param('~rate', None)
         self.rate = rospy.Rate(rate) if rate is not None else None
-
-        weights = rospy.get_param('~weights', os.path.join(lib_path, 'config/weights/lss/lss.pt'))
-        rospy.loginfo('Loading LSS model from %s' % weights)
-        if not os.path.exists(weights):
-            rospy.logerr('Model weights file %s does not exist. Using random weights.' % weights)
-        self.model = LiftSplatShoot(self.lss_cfg['grid_conf'],
-                                    self.lss_cfg['data_aug_conf']).from_pretrained(weights)
-        self.model.to(self.device)
-        self.model.eval()
 
         self.robot_frame = rospy.get_param('~robot_frame', 'base_link')
         self.fixed_frame = rospy.get_param('~fixed_frame', 'odom')
@@ -56,6 +49,9 @@ class TerrainEncoder:
         if self.calib is not None:
             rospy.loginfo('Loaded calibration from %s' % calib_path)
 
+        model = rospy.get_param('~model', 'lss')
+        self.terrain_encoder = self.load_terrain_encoder(model=model)
+
         # cv bridge
         self.cv_bridge = CvBridge()
         # tf listener
@@ -69,6 +65,27 @@ class TerrainEncoder:
 
         self.max_msgs_delay = rospy.get_param('~max_msgs_delay', 0.1)
         self.max_age = rospy.get_param('~max_age', 0.2)
+
+    def load_terrain_encoder(self, model='lss'):
+        weights = rospy.get_param('~weights', os.path.join(lib_path, f'config/weights/{model}/val.pth'))
+        rospy.loginfo('Loading terrain endoder from %s' % weights)
+        if not os.path.exists(weights):
+            rospy.logerr('Model weights file %s does not exist. Using random weights.' % weights)
+        if model == 'lss':
+            terrain_encoder = LiftSplatShoot(self.lss_cfg['grid_conf'],
+                                             self.lss_cfg['data_aug_conf']).from_pretrained(weights)
+        elif model == 'voxelnet':
+            terrain_encoder = VoxelNet(self.lss_cfg['grid_conf'],
+                                       self.lss_cfg['data_aug_conf']).from_pretrained(weights)
+        elif model == 'bevfusion':
+            terrain_encoder = BEVFusion(self.lss_cfg['grid_conf'],
+                                        self.lss_cfg['data_aug_conf']).from_pretrained(weights)
+        else:
+            rospy.logerr('Unknown model: %s' % model)
+            raise (RuntimeError('Unknown model: %s' % model))
+        terrain_encoder.to(self.device)
+        terrain_encoder.eval()
+        return terrain_encoder
 
     @staticmethod
     def spin():
@@ -220,8 +237,7 @@ class TerrainEncoder:
         # if message is stale do not process it
         dt = rospy.Time.now() - msgs[0].header.stamp
         if dt.to_sec() > self.max_age:
-            rospy.logdebug(
-                f'Stale image messages received ({dt.to_sec():.3f} > {self.max_age} [sec]), skipping')
+            rospy.logdebug(f'Stale image messages received ({dt.to_sec():.3f} > {self.max_age} [sec]), skipping')
             return
 
         with torch.no_grad():
@@ -249,8 +265,8 @@ class TerrainEncoder:
         rospy.logdebug('Preprocessing time: %.3f [sec]' % (t1 - t0))
 
         # model inference
-        out = self.model(*inputs)
-        height_terrain, friction = out['terrain'], out['friction']
+        terrain = self.terrain_encoder(*inputs)
+        height_terrain, friction = terrain['terrain'], terrain['friction']
         rospy.loginfo('LSS inference time: %.3f [sec]' % (time() - t1))
         rospy.loginfo('Predicted height map shape: %s' % str(height_terrain.shape))
 

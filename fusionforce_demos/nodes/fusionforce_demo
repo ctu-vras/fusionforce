@@ -20,7 +20,7 @@ import tf2_ros
 from visualization_msgs.msg import Marker, MarkerArray
 
 
-class MonoForce:
+class FusionForce:
     def __init__(self,
                  name='fusionforce',
                  robot='marv',
@@ -304,11 +304,11 @@ def main():
     robot_initial_frame = rospy.get_param('~robot_initial_frame', 'base_link0')
     robot_frame = rospy.get_param('~robot_frame', 'base_link')
     
-    node = MonoForce(robot=robot,
-                     lss_config_path=lss_config_path,
-                     map_frame=map_frame,
-                     robot_initial_frame=robot_initial_frame,
-                     robot_frame=robot_frame)
+    node = FusionForce(robot=robot,
+                       lss_config_path=lss_config_path,
+                       map_frame=map_frame,
+                       robot_initial_frame=robot_initial_frame,
+                       robot_frame=robot_frame)
     try:
         node.run()
     except rospy.ROSInterruptException:

@@ -269,12 +269,12 @@ class Eval:
 def main():
     args = arg_parser()
     print(args)
-    monoforce = Eval(seq=args.seq,
-                     batch_size=args.batch_size,
-                     terrain_encoder=args.terrain_encoder,
-                     terrain_encoder_path=args.terrain_encoder_path,
-                     traj_predictor=args.traj_predictor)
-    monoforce.run(vis=args.vis)
+    eval = Eval(seq=args.seq,
+                batch_size=args.batch_size,
+                terrain_encoder=args.terrain_encoder,
+                terrain_encoder_path=args.terrain_encoder_path,
+                traj_predictor=args.traj_predictor)
+    eval.run(vis=args.vis)
 
 
 if __name__ == '__main__':
