@@ -22,15 +22,12 @@ RUN mkdir -p $WS_PATH/src/
 WORKDIR $WS_PATH/src/
 
 # Clone the fusionforce repository
-RUN git clone https://github.com/ctu-vras/monoforce.git
+RUN git clone https://github.com/ctu-vras/fusionforce.git
 
 # Install Python requirements
-WORKDIR $WS_PATH/src/monoforce/monoforce/docker/
-# Pytorch and Pytorch3D
+WORKDIR $WS_PATH/src/fusionforce/fusionforce/docker/
+# Pytorch
 RUN pip install torch torchvision --index-url https://download.pytorch.org/whl/cu113
-RUN pip install "git+https://github.com/facebookresearch/pytorch3d.git@stable"
-# NVIDIA Warp
-RUN pip install https://github.com/NVIDIA/warp/releases/download/v1.0.2/warp_lang-1.0.2-py3-none-manylinux2014_x86_64.whl
 # Other requirements
 RUN pip install -r requirements.txt
 

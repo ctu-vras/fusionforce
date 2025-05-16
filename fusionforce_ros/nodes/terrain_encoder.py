@@ -75,8 +75,7 @@ class TerrainEncoder:
             terrain_encoder = LiftSplatShoot(self.lss_cfg['grid_conf'],
                                              self.lss_cfg['data_aug_conf']).from_pretrained(weights)
         elif model == 'voxelnet':
-            terrain_encoder = VoxelNet(self.lss_cfg['grid_conf'],
-                                       self.lss_cfg['data_aug_conf']).from_pretrained(weights)
+            terrain_encoder = VoxelNet(self.lss_cfg['grid_conf']).from_pretrained(weights)
         elif model == 'bevfusion':
             terrain_encoder = BEVFusion(self.lss_cfg['grid_conf'],
                                         self.lss_cfg['data_aug_conf']).from_pretrained(weights)

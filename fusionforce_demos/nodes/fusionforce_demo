@@ -10,6 +10,8 @@ from fusionforce.models.traj_predictor.dphys_config import DPhysConfig
 from fusionforce.models.traj_predictor.dphysics import DPhysics, generate_controls
 from fusionforce.ros import height_map_to_gridmap_msg, poses_to_path, to_tf, xyz_to_point
 from fusionforce.models.terrain_encoder.lss import LiftSplatShoot
+from fusionforce.models.terrain_encoder.voxelnet import VoxelNet
+from fusionforce.models.terrain_encoder.bevfusion import BEVFusion
 from sensor_msgs.msg import PointCloud2, Image, CameraInfo
 from nav_msgs.msg import Path
 from grid_map_msgs.msg import GridMap
@@ -45,7 +47,7 @@ class FusionForce:
         self.lss_config_path = lss_config_path
         assert os.path.isfile(self.lss_config_path), 'LSS config file %s does not exist' % self.lss_config_path
         rospy.loginfo('Loading LSS config from %s' % self.lss_config_path)
-        self.lss_config = read_yaml(self.lss_config_path)
+        self.lss_cfg = read_yaml(self.lss_config_path)
 
         self.rate = 1 / self.dphys_cfg.dt
         self.map_frame = map_frame
@@ -53,11 +55,8 @@ class FusionForce:
         self.robot_frame = robot_frame
         self.camera_frames = None  # will be set from the data sequence
         # load terrain encoder
-        self.terrain_encoder = LiftSplatShoot(self.lss_config['grid_conf'],
-                                              self.lss_config['data_aug_conf'])
-        self.terrain_encoder.from_pretrained(os.path.join(self.lib_path, 'config/weights/lss/val.pth'))
-        self.terrain_encoder.to(self.device)
-        self.terrain_encoder.eval()
+        self.model = model
+        self.terrain_encoder = self.load_terrain_encoder(model=self.model)
 
         # publishers
         self.cloud_pub = rospy.Publisher('cloud', PointCloud2, queue_size=1)
@@ -68,6 +67,26 @@ class FusionForce:
         self.tf_broadcast = tf2_ros.TransformBroadcaster()
         self.normal_forces_pub = rospy.Publisher('normal_forces', MarkerArray, queue_size=1)
         self.friction_forces_pub = rospy.Publisher('friction_forces', MarkerArray, queue_size=1)
+
+    def load_terrain_encoder(self, model='lss'):
+        weights = os.path.join(self.lib_path, f'config/weights/{model}/val.pth')
+        rospy.loginfo('Loading terrain endoder from %s' % weights)
+        if not os.path.exists(weights):
+            rospy.logerr('Model weights file %s does not exist. Using random weights.' % weights)
+        if model == 'lss':
+            terrain_encoder = LiftSplatShoot(self.lss_cfg['grid_conf'],
+                                             self.lss_cfg['data_aug_conf']).from_pretrained(weights)
+        elif model == 'voxelnet':
+            terrain_encoder = VoxelNet(self.lss_cfg['grid_conf']).from_pretrained(weights)
+        elif model == 'bevfusion':
+            terrain_encoder = BEVFusion(self.lss_cfg['grid_conf'],
+                                        self.lss_cfg['data_aug_conf']).from_pretrained(weights)
+        else:
+            rospy.logerr('Unknown model: %s' % model)
+            raise (RuntimeError('Unknown model: %s' % model))
+        terrain_encoder.to(self.device)
+        terrain_encoder.eval()
+        return terrain_encoder
 
     def publish_cloud(self, points, stamp):
         assert points.ndim == 2, 'Points must be of shape (N, 3)'
@@ -164,9 +183,9 @@ class FusionForce:
         return states, forces
 
     def run(self):
-        ds = ROUGH(self.data_seq, dphys_cfg=self.dphys_cfg, lss_cfg=self.lss_config, is_train=False)
+        ds = ROUGH(self.data_seq, dphys_cfg=self.dphys_cfg, lss_cfg=self.lss_cfg, is_train=False)
         rospy.loginfo('Loaded dataset with %d samples from path: %s' % (len(ds), self.data_seq))
-        sample_i = np.random.choice(range(len(ds)))
+        sample_i = 112  #np.random.choice(range(len(ds)))
         rospy.loginfo('Using sample number %d that corresponds to timestamp %f' % (sample_i, ds.poses_ts[sample_i]))
 
         self.camera_frames = ds.camera_names
@@ -190,10 +209,22 @@ class FusionForce:
 
         # get heightmap prediction
         with torch.no_grad():
-            inputs = [imgs, rots, trans, intrins, post_rots, post_trans]
-            inputs = [torch.as_tensor(i[None], device=self.device) for i in inputs]
-            out = self.terrain_encoder(*inputs)
-            terrain_pred, friction_pred = out['terrain'], out['friction']
+            if self.model == 'lss':
+                img_inputs = [imgs, rots, trans, intrins, post_rots, post_trans]
+                img_inputs = [torch.as_tensor(i[None], device=self.device) for i in img_inputs]
+                terrain = self.terrain_encoder(*img_inputs)
+            elif self.model == 'voxelnet':
+                input = torch.as_tensor(points).to(self.device).T[np.newaxis]  # (1, 3, N)
+                terrain = self.terrain_encoder(input)
+            elif self.model == 'bevfusion':
+                img_inputs = [imgs, rots, trans, intrins, post_rots, post_trans]
+                img_inputs = [torch.as_tensor(i[None], device=self.device) for i in img_inputs]
+                points_input = torch.as_tensor(points).to(self.device).T[np.newaxis]  # (1, 3, N)
+                terrain = self.terrain_encoder(img_inputs, points_input)
+            else:
+                raise ValueError(f'Unknown model: {self.model}. Supported: lss, voxelnet, bevfusion')
+
+            terrain_pred, friction_pred = terrain['terrain'], terrain['friction']
             rospy.logdebug('Friction values range, min: %.3f, max: %.3f' % (friction_pred.min(), friction_pred.max()))
 
         rate = rospy.Rate(self.rate)
@@ -303,12 +334,14 @@ def main():
     map_frame = rospy.get_param('~map_frame', 'map')
     robot_initial_frame = rospy.get_param('~robot_initial_frame', 'base_link0')
     robot_frame = rospy.get_param('~robot_frame', 'base_link')
+    model = rospy.get_param('~model', 'lss')
     
     node = FusionForce(robot=robot,
                        lss_config_path=lss_config_path,
                        map_frame=map_frame,
                        robot_initial_frame=robot_initial_frame,
-                       robot_frame=robot_frame)
+                       robot_frame=robot_frame,
+                       model=model)
     try:
         node.run()
     except rospy.ROSInterruptException:
