@@ -61,7 +61,7 @@ class Eval:
                  terrain_encoder='lss',
                  terrain_encoder_path=None,
                  traj_predictor='dphysics'):
-        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        self.device = 'cpu'  # torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
         # load DPhys config
         self.dphys_cfg = DPhysConfig()

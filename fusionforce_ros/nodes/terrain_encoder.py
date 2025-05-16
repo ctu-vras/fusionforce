@@ -8,13 +8,13 @@ import numpy as np
 import rospy
 from cv_bridge import CvBridge
 from grid_map_msgs.msg import GridMap
-from fusionforce.ros import height_map_to_gridmap_msg
+from fusionforce.ros import height_map_to_gridmap_msg, cloud_msg_to_numpy
 from fusionforce.utils import read_yaml, timing, load_calib
 from fusionforce.models.terrain_encoder.lss import LiftSplatShoot
 from fusionforce.models.terrain_encoder.voxelnet import VoxelNet
 from fusionforce.models.terrain_encoder.bevfusion import BEVFusion
 from fusionforce.models.terrain_encoder.utils import img_transform, normalize_img, sample_augmentation
-from sensor_msgs.msg import CompressedImage, CameraInfo
+from sensor_msgs.msg import CompressedImage, CameraInfo, PointCloud2
 from time import time
 from message_filters import ApproximateTimeSynchronizer, Subscriber
 import tf2_ros
@@ -36,20 +36,21 @@ class TerrainEncoder:
         self.robot_frame = rospy.get_param('~robot_frame', 'base_link')
         self.fixed_frame = rospy.get_param('~fixed_frame', 'odom')
 
+        calib_path = rospy.get_param('~calib_path', '')
+        self.calib = load_calib(calib_path)
+        if self.calib is not None:
+            rospy.loginfo('Loaded calibration from %s' % calib_path)
+
         img_topics = rospy.get_param('~img_topics', [])
         n_cams = rospy.get_param('~n_cams', None)
         self.img_topics = img_topics[:n_cams] if isinstance(n_cams, int) else img_topics
         camera_info_topics = rospy.get_param('~camera_info_topics', [])
         self.camera_info_topics = camera_info_topics[:n_cams] if isinstance(n_cams, int) else camera_info_topics
         assert len(self.img_topics) == len(self.camera_info_topics)
+        self.cloud_topic = rospy.get_param('~cloud_topic', '/points')
 
-        calib_path = rospy.get_param('~calib_path', '')
-        self.calib = load_calib(calib_path)
-        if self.calib is not None:
-            rospy.loginfo('Loaded calibration from %s' % calib_path)
-
-        model = rospy.get_param('~model', 'lss')
-        self.terrain_encoder = self.load_terrain_encoder(model=model)
+        self.model = rospy.get_param('~model', 'lss')
+        self.terrain_encoder = self.load_terrain_encoder(model=self.model)
 
         # cv bridge
         self.cv_bridge = CvBridge()
@@ -93,16 +94,32 @@ class TerrainEncoder:
             pass
 
     def start(self):
-        # subscribe to images with approximate time synchronization
-        self.subs = []
-        for topic in self.img_topics:
-            rospy.loginfo('Subscribing to %s' % topic)
-            self.subs.append(Subscriber(topic, CompressedImage))
-        for topic in self.camera_info_topics:
-            rospy.loginfo('Subscribing to %s' % topic)
-            self.subs.append(Subscriber(topic, CameraInfo))
-        self.sync = ApproximateTimeSynchronizer(self.subs, queue_size=1, slop=self.max_msgs_delay)
-        self.sync.registerCallback(self.callback)
+        # subscribe to topics with approximate time synchronization
+        subs = []
+        if self.model == 'lss':
+            for topic in self.img_topics:
+                rospy.loginfo('Subscribing to %s' % topic)
+                subs.append(Subscriber(topic, CompressedImage))
+            for topic in self.camera_info_topics:
+                rospy.loginfo('Subscribing to %s' % topic)
+                subs.append(Subscriber(topic, CameraInfo))
+        elif self.model == 'voxelnet':
+            rospy.loginfo('Subscribing to %s' % self.cloud_topic)
+            subs.append(Subscriber(self.cloud_topic, PointCloud2))
+        elif self.model == 'bevfusion':
+            for topic in self.img_topics:
+                rospy.loginfo('Subscribing to %s' % topic)
+                subs.append(Subscriber(topic, CompressedImage))
+            for topic in self.camera_info_topics:
+                rospy.loginfo('Subscribing to %s' % topic)
+                subs.append(Subscriber(topic, CameraInfo))
+            rospy.loginfo('Subscribing to %s' % self.cloud_topic)
+            subs.append(Subscriber(self.cloud_topic, PointCloud2))
+        else:
+            rospy.logerr('Unknown model: %s' % self.model)
+            raise (RuntimeError('Unknown model: %s' % self.model))
+        sync = ApproximateTimeSynchronizer(subs, queue_size=1, slop=self.max_msgs_delay)
+        sync.registerCallback(self.callback)
 
     def preprocess_img(self, img):
         post_rot = torch.eye(2)
@@ -245,7 +262,7 @@ class TerrainEncoder:
         if self.rate is not None:
             self.rate.sleep()
 
-    def proc(self, *msgs):
+    def cam_msgs_to_terrain(self, msgs):
         t0 = time()
         n = len(msgs)
         assert n % 2 == 0
@@ -256,19 +273,36 @@ class TerrainEncoder:
                 'Image and CameraInfo messages must have the same frame_id'
         img_msgs = msgs[:n // 2]
         info_msgs = msgs[n // 2:]
-
         inputs = self.get_lss_inputs(img_msgs, info_msgs)
         inputs = [i.to(self.device) for i in inputs]
         t1 = time()
         rospy.logdebug('Preprocessing time: %.3f [sec]' % (t1 - t0))
-
         # model inference
         terrain = self.terrain_encoder(*inputs)
-        height_terrain, friction = terrain['terrain'], terrain['friction']
         rospy.loginfo('LSS inference time: %.3f [sec]' % (time() - t1))
-        rospy.loginfo('Predicted height map shape: %s' % str(height_terrain.shape))
+        return terrain
+
+    def cloud_msg_to_terrain(self, msg):
+        assert isinstance(msg, PointCloud2)
+        points = cloud_msg_to_numpy(msg)
+        points_input = torch.as_tensor(points, dtype=torch.float32).to(self.device)
+        points_input = points_input[None].T  # (3, N)
+        terrain = self.terrain_encoder(points_input)
+        return terrain
+
+    def proc(self, *msgs):
+        if self.model == 'lss':
+            terrain = self.cam_msgs_to_terrain(msgs)
+        elif self.model == 'voxelnet':
+            terrain = self.cloud_msg_to_terrain(msgs[0])
+        elif self.model == 'bevfusion':
+            raise NotImplementedError
+        else:
+            raise RuntimeError(f'Unknown model {self.model}. Supported are lss, voxelnet, and bevfusion.')
 
         # publish height map as grid map
+        height_terrain, friction = terrain['terrain'], terrain['friction']
+        rospy.loginfo('Predicted height map shape: %s' % str(height_terrain.shape))
         stamp = msgs[0].header.stamp
         height = height_terrain.squeeze().cpu().numpy()
         grid_msg = height_map_to_gridmap_msg(height, grid_res=self.lss_cfg['grid_conf']['xbound'][2],

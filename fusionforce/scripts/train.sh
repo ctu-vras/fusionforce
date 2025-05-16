@@ -5,7 +5,7 @@ ROBOT=marv
 DEBUG=True
 VIS=True
 BSZ=2  # 24, 24, 4
-WEIGHTS=$HOME/workspaces/traversability_ws/src/fusionforce/fusionforce/config/weights/${MODEL}/val.pth
+WEIGHTS=$HOME/workspaces/ros1/traversability_ws/src/fusionforce/fusionforce/config/weights/${MODEL}/val.pth
 
 ./train.py --bsz $BSZ --nepochs 1000 --lr 1e-4 \
            --debug $DEBUG --vis $VIS \
