@@ -11,7 +11,7 @@ from std_msgs.msg import Float32MultiArray, MultiArrayDimension
 from grid_map_msgs.msg import GridMap
 from sensor_msgs.msg import PointCloud2, CompressedImage, Image
 from ros_numpy import msgify, numpify
-from numpy.lib.recfunctions import unstructured_to_structured
+from numpy.lib.recfunctions import unstructured_to_structured, structured_to_unstructured
 import rospy
 from visualization_msgs.msg import Marker
 
@@ -118,6 +118,13 @@ def to_cloud_msg(cloud, stamp=None, frame_id=None, fields=None):
     cloud_struct = unstructured_to_structured(cloud, names=fields)
     return msgify(PointCloud2, cloud_struct, stamp=stamp, frame_id=frame_id)
 
+def cloud_msg_to_numpy(msg):
+    assert isinstance(msg, PointCloud2)
+    # convert point cloud message to numpy array
+    cloud = numpify(msg)
+    # convert structured array to unstructured array
+    points = structured_to_unstructured(cloud[['x', 'y', 'z']])
+    return points
 
 def to_pose_array(poses, stamp=None, frame_id=None):
     assert isinstance(poses, np.ndarray) or isinstance(poses, torch.Tensor)

@@ -29,12 +29,13 @@ class FusionForce:
                  lss_config_path=None,
                  map_frame='map',
                  robot_initial_frame='base_link0',
-                 robot_frame='base_link'):
+                 robot_frame='base_link',
+                 model='lss'):
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         self.robot = robot
 
         self.lib_path = rospkg.RosPack().get_path('fusionforce').replace('fusionforce_ros', 'fusionforce')
-        self.data_seq = np.random.choice(rough_seq_paths)
+        self.data_seq = rough_seq_paths[0]  # np.random.choice(rough_seq_paths)
         if not os.path.isdir(self.data_seq):
             rospy.loginfo('Data sequence for robot %s does not exist. Using sample data.' % self.robot)
             self.data_seq = os.path.join(self.lib_path, 'config/data_sample', self.robot)

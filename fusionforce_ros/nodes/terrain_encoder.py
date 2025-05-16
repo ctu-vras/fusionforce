@@ -27,8 +27,7 @@ lib_path = os.path.join(__file__, '..', '..', '..')
 
 
 class TerrainEncoder:
-    def __init__(self,
-                 lss_cfg: dict):
+    def __init__(self, lss_cfg: dict):
         self.lss_cfg = lss_cfg
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         rate = rospy.get_param('~rate', None)
