@@ -3,15 +3,19 @@
 import os
 import numpy as np
 import torch
+import torchvision
+import PIL as pillow
 import rospy
 from numpy.lib.recfunctions import unstructured_to_structured
-from fusionforce.datasets import ROUGH, rough_seq_paths
+from fusionforce.datasets import ROUGH
 from fusionforce.models.traj_predictor.dphys_config import DPhysConfig
 from fusionforce.models.traj_predictor.dphysics import DPhysics, generate_controls
 from fusionforce.ros import height_map_to_gridmap_msg, poses_to_path, to_tf, xyz_to_point
 from fusionforce.models.terrain_encoder.lss import LiftSplatShoot
 from fusionforce.models.terrain_encoder.voxelnet import VoxelNet
 from fusionforce.models.terrain_encoder.bevfusion import BEVFusion
+from fusionforce.models.terrain_encoder.utils import denormalize_img
+from fusionforce.utils import compile_data
 from sensor_msgs.msg import PointCloud2, Image, CameraInfo
 from nav_msgs.msg import Path
 from grid_map_msgs.msg import GridMap
@@ -20,6 +24,27 @@ from fusionforce.utils import read_yaml, position
 import rospkg
 import tf2_ros
 from visualization_msgs.msg import Marker, MarkerArray
+
+
+class FusionData(ROUGH):
+    def __init__(self, path, lss_cfg=None, dphys_cfg=DPhysConfig(), is_train=False):
+        super(FusionData, self).__init__(path, lss_cfg, dphys_cfg=dphys_cfg, is_train=is_train)
+
+    def get_sample(self, i):
+        imgs, rots, trans, intrins, post_rots, post_trans = self.get_images_data(i)
+        points = torch.as_tensor(position(self.get_cloud(i))).T
+        control_ts, controls = self.get_controls(i)
+        traj_ts, states = self.get_states_traj(i)
+        xs, xds, Rs, omegas = states
+        hm_geom = self.get_geom_height_map(i)
+        hm_terrain = self.get_terrain_height_map(i)
+        pose0 = torch.as_tensor(self.get_initial_pose_on_heightmap(i), dtype=torch.float32)
+        return (imgs, rots, trans, intrins, post_rots, post_trans,
+                hm_geom, hm_terrain,
+                control_ts, controls,
+                pose0,
+                traj_ts, xs, xds, Rs, omegas,
+                points)
 
 
 class FusionForce:
@@ -33,9 +58,10 @@ class FusionForce:
                  model='lss'):
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         self.robot = robot
+        self.random_controls = rospy.get_param('~random_controls', False)
+        self.sample_i = rospy.get_param('~sample_i', 0)
 
         self.lib_path = rospkg.RosPack().get_path('fusionforce').replace('fusionforce_ros', 'fusionforce')
-        self.data_seq = rough_seq_paths[0]  # np.random.choice(rough_seq_paths)
         self.dphys_cfg = DPhysConfig(robot=self.robot)
         self.dphys_cfg.from_rosparams(node_name=name)
         # load dphysics model
@@ -46,6 +72,9 @@ class FusionForce:
         assert os.path.isfile(self.lss_config_path), 'LSS config file %s does not exist' % self.lss_config_path
         rospy.loginfo('Loading LSS config from %s' % self.lss_config_path)
         self.lss_cfg = read_yaml(self.lss_config_path)
+
+        size = (self.lss_cfg['data_aug_conf']['H'], self.lss_cfg['data_aug_conf']['W'])
+        self.resize_img = torchvision.transforms.Resize(size, interpolation=pillow.Image.BICUBIC)
 
         self.rate = 1 / self.dphys_cfg.dt
         self.map_frame = map_frame
@@ -181,29 +210,25 @@ class FusionForce:
         return states, forces
 
     def run(self):
-        ds = ROUGH(self.data_seq, dphys_cfg=self.dphys_cfg, lss_cfg=self.lss_cfg, is_train=False)
-        rospy.loginfo('Loaded dataset with %d samples from path: %s' % (len(ds), self.data_seq))
-        sample_i = 112  #np.random.choice(range(len(ds)))
-        rospy.loginfo('Using sample number %d that corresponds to timestamp %f' % (sample_i, ds.poses_ts[sample_i]))
+        _, ds = compile_data(dphys_cfg=self.dphys_cfg, lss_cfg=self.lss_cfg, Data=FusionData)
+        rospy.loginfo('Loaded dataset with %d samples' % len(ds))
+        rospy.loginfo('Using sample number %d' % self.sample_i)
 
-        self.camera_frames = ds.camera_names
+        self.camera_frames = ['camera_left', 'camera_front', 'camera_right', 'camera_rear']
         self.img_pubs = [rospy.Publisher('%s/image' % cam, Image, queue_size=1) for cam in self.camera_frames]
         self.caminfo_pubs = [rospy.Publisher('%s/camera_info' % cam, CameraInfo, queue_size=1) for cam in self.camera_frames]
 
-        imgs, rots, trans, intrins, post_rots, post_trans = ds.get_images_data(sample_i)
-        points = position(ds.get_cloud(sample_i))
-
-        traj = ds.get_traj(sample_i)
-        poses_gt = traj['poses']
-
-        map_pose = ds.get_pose(sample_i)
-
-        imgs_raw = []
-        Ks = []
-        for cam in self.camera_frames:
-            img_raw, K = ds.get_image(sample_i, cam)
-            imgs_raw.append(img_raw)
-            Ks.append(K)
+        (imgs, rots, trans, intrins, post_rots, post_trans,
+         hm_geom, hm_terrain,
+         control_ts, controls,
+         map_pose,
+         traj_ts, xs, xds, Rs, omegas,
+         points) = ds[self.sample_i]
+        poses_gt = torch.zeros((len(xs), 4, 4))
+        poses_gt[:, :3, 3] = xs
+        poses_gt[:, :3, :3] = Rs
+        poses_gt[:, 3, 3] = 1.
+        imgs_raw = [self.resize_img(denormalize_img(img)) for img in imgs]
 
         # get heightmap prediction
         with torch.no_grad():
@@ -212,12 +237,12 @@ class FusionForce:
                 img_inputs = [torch.as_tensor(i[None], device=self.device) for i in img_inputs]
                 terrain = self.terrain_encoder(*img_inputs)
             elif self.model == 'voxelnet':
-                input = torch.as_tensor(points).to(self.device).T[np.newaxis]  # (1, 3, N)
+                input = torch.as_tensor(points).to(self.device)[np.newaxis]  # (1, 3, N)
                 terrain = self.terrain_encoder(input)
             elif self.model == 'bevfusion':
                 img_inputs = [imgs, rots, trans, intrins, post_rots, post_trans]
                 img_inputs = [torch.as_tensor(i[None], device=self.device) for i in img_inputs]
-                points_input = torch.as_tensor(points).to(self.device).T[np.newaxis]  # (1, 3, N)
+                points_input = torch.as_tensor(points).to(self.device)[np.newaxis]  # (1, 3, N)
                 terrain = self.terrain_encoder(img_inputs, points_input)
             else:
                 raise ValueError(f'Unknown model: {self.model}. Supported: lss, voxelnet, bevfusion')
@@ -236,25 +261,26 @@ class FusionForce:
 
             if pose_i == 0:
                 # point cloud
-                self.publish_cloud(points, stamp)
+                self.publish_cloud(points.T, stamp)
 
                 # grid map
                 self.publish_gridmap(terrain_pred, stamp, topic='grid_map_terrain_pred',
                                      mask=friction_pred, mask_layer_name='friction')
 
                 # images
-                self.publish_images(imgs_raw, Ks, stamp)
+                self.publish_images(imgs_raw, intrins, stamp)
 
-                # predict path poses
-                v_range = (self.dphys_cfg.vel_max / 2., self.dphys_cfg.vel_max)
-                w_range = (-self.dphys_cfg.omega_max, self.dphys_cfg.omega_max)
-                # if robot has more than one (front-facing) camera, randomly change commanded linear velocity direction
-                if len(self.camera_frames) > 1 and np.random.random() > 0.5:
-                    v_range = (-self.dphys_cfg.vel_max, -self.dphys_cfg.vel_max / 2.)
-                controls, _ = generate_controls(n_trajs=1,
-                                                v_range=v_range,
-                                                w_range=w_range,
-                                                time_horizon=self.dphys_cfg.traj_sim_time, dt=self.dphys_cfg.dt)
+                if self.random_controls:
+                    # predict path poses
+                    v_range = (self.dphys_cfg.vel_max / 2., self.dphys_cfg.vel_max)
+                    w_range = (-self.dphys_cfg.omega_max, self.dphys_cfg.omega_max)
+                    # if robot has more than one (front-facing) camera, randomly change a commanded linear velocity direction
+                    if len(self.camera_frames) > 1 and np.random.random() > 0.5:
+                        v_range = (-self.dphys_cfg.vel_max, -self.dphys_cfg.vel_max / 2.)
+                    controls, _ = generate_controls(n_trajs=1,
+                                                    v_range=v_range,
+                                                    w_range=w_range,
+                                                    time_horizon=self.dphys_cfg.traj_sim_time, dt=self.dphys_cfg.dt)
 
                 states, forces = self.predict_states(z_grid=terrain_pred.squeeze(1), controls=controls, friction=friction_pred.squeeze(1))
                 poses = self.poses_from_states(states)

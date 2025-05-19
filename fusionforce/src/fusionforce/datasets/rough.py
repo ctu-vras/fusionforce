@@ -38,6 +38,18 @@ rough_seq_paths = [
         os.path.join(data_dir, 'ROUGH/marv_2024-10-31-15-35-05'),
         os.path.join(data_dir, 'ROUGH/marv_2024-10-31-15-52-07'),
         os.path.join(data_dir, 'ROUGH/marv_2024-10-31-15-56-33'),
+        # TRADR robot
+        os.path.join(data_dir, 'ROUGH/ugv_2024-09-10-17-02-31'),
+        os.path.join(data_dir, 'ROUGH/ugv_2024-09-10-17-12-12'),
+        os.path.join(data_dir, 'ROUGH/ugv_2024-09-26-13-54-18'),
+        os.path.join(data_dir, 'ROUGH/ugv_2024-09-26-13-58-46'),
+        os.path.join(data_dir, 'ROUGH/ugv_2024-09-26-14-03-57'),
+        os.path.join(data_dir, 'ROUGH/ugv_2024-09-26-14-14-42'),
+        os.path.join(data_dir, 'ROUGH/ugv_2024-10-05-15-40-41'),
+        os.path.join(data_dir, 'ROUGH/ugv_2024-10-05-15-48-31'),
+        os.path.join(data_dir, 'ROUGH/ugv_2024-10-05-15-58-52'),
+        os.path.join(data_dir, 'ROUGH/ugv_2024-10-05-16-08-30'),
+        os.path.join(data_dir, 'ROUGH/ugv_2024-10-05-16-24-48'),
 ]
 
 

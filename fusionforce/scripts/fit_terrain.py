@@ -12,10 +12,17 @@ import matplotlib.pyplot as plt
 def optimize_terrain():
     from time import time
 
+    laplace_kernel = torch.tensor([[1, 1, 1],
+                                   [1, -8, 1],
+                                   [1, 1, 1]], dtype=torch.float32).unsqueeze(0).unsqueeze(0)
+    def laplacian_loss(pred):
+        lap = torch.nn.functional.conv2d(pred, laplace_kernel, padding=1)
+        return torch.mean(torch.abs(lap))
+
     dphys_cfg = DPhysConfig(grid_res=0.4)
 
     # simulation parameters
-    T, dt = 6.0, 0.01
+    T, dt = 4.0, 0.01
     dphys_cfg.dt = dt
     dphys_cfg.traj_sim_time = T
     n_iters = 100
@@ -55,14 +62,13 @@ def optimize_terrain():
 
         states, _ = dphysics(z_grid=z_grid, controls=controls, friction=friction)
         loss_traj = physics_loss(states_pred=states, states_gt=states_gt, pred_ts=ts, gt_ts=ts, gamma=0.9)
-        loss_terrain = total_variation(z_grid)
-        loss = loss_traj #+ loss_terrain
+        # loss_terrain = total_variation(z_grid)
+        loss_terrain = laplacian_loss(z_grid)
+        loss = loss_traj + 0.02 * loss_terrain
 
         loss.backward()
         optimizer.step()
-        print(f'Iteration {i}, Loss: {loss.item()}')
-        # print(f'Heightmap mean: {z_grid.mean().item()}')
-        # print(f'Friction mean: {friction.mean().item()}')
+        print(f'Iteration {i}, Loss: {loss.item()}, loss_traj: {loss_traj.item()}, loss_terrain: {loss_terrain.item()}')
 
         if loss.item() < loss_min:
             loss_min = loss.item()
@@ -79,9 +85,9 @@ def optimize_terrain():
         losses_history['total'].append(loss.item())
 
     plt.figure()
-    # for key, loss in losses_history.items():
-    #     plt.plot(loss, label=key)
-    plt.plot(losses_history['traj'], label='traj')
+    for key, loss in losses_history.items():
+        plt.plot(loss, label=key)
+    # plt.plot(losses_history['traj'], label='traj')
     plt.xlabel('Iteration')
     plt.ylabel('Loss')
     plt.legend()
