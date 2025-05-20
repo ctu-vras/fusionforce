@@ -164,7 +164,7 @@ class TrainerCore:
                 if k not in epoch_losses:
                     epoch_losses[k] = 0.0
                 epoch_losses[k] += v.item()
-            epoch_losses['total'] = (losses['geom'] + losses['terrain'] + losses['phys']).item()
+            epoch_losses['total'] += (losses['geom'] + losses['terrain'] + losses['phys']).item()
 
             counter += 1
             for k, v in losses.items():
