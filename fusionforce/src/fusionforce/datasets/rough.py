@@ -671,7 +671,10 @@ class PointsROUGH(ROUGH):
         if self.is_train and apply_augs:
             # apply augmentations to the point cloud
             mask = filter_column(cloud, d_max=self.dphys_cfg.d_max, prob=1.0)
-            cloud = cloud[mask]
+            # fill with nans to save dimensions
+            for v in cloud.dtype.names:
+                if cloud[v].dtype == np.float32:
+                    cloud[v][~mask] = float('nan')
 
         return cloud
 
