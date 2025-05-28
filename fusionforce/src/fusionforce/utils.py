@@ -189,7 +189,6 @@ def compile_data(val_fraction=0.1, small_data=False, vis=False, Data=None, dphys
 
 
 def explore_data(ds, sample_range='random', save=False):
-    from tqdm import tqdm
     from fusionforce.models.terrain_encoder.lss import LiftSplatShoot
     from fusionforce.models.terrain_encoder.utils import ego_to_cam, get_only_in_img_mask, denormalize_img
 
@@ -204,11 +203,11 @@ def explore_data(ds, sample_range='random', save=False):
         sample_range = [np.random.choice(range(len(ds)))]
         print('Selected data sample #{}'.format(sample_range[0]))
     elif sample_range == 'all':
-        sample_range = tqdm(range(len(ds)), total=len(ds))
+        sample_range = range(len(ds))
     else:
         assert isinstance(sample_range, list) or isinstance(sample_range, np.ndarray) or isinstance(sample_range, range)
 
-    for sample_i in tqdm(sample_range):
+    for sample_i in sample_range:
         imgs, rots, trans, intrins, post_rots, post_trans = ds.get_images_data(sample_i)
         height_geom = ds.get_geom_height_map(sample_i)[0]
         height_terrain = ds.get_terrain_height_map(sample_i)[0]

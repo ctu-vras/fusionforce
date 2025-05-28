@@ -5,13 +5,6 @@ import numpy as np
 default_rng = np.random.default_rng(135)
 
 
-__all__ = [
-    'filter_grid',
-    'estimate_heightmap',
-    'hm_to_cloud',
-    'within_bounds',
-]
-
 def position(cloud):
     """Cloud to point positions (xyz)."""
     if cloud.dtype.names:
@@ -84,6 +77,7 @@ def filter_grid(cloud, grid_res, keep='first', log=False, rng=default_rng, only_
 
     filtered = cloud[ind]
     return filtered
+
 
 def estimate_heightmap(points, grid_res, d_max, h_max, r_min=None, h_min=None):
     # remove nans from the point cloud if any
@@ -171,3 +165,50 @@ def hm_to_cloud(height, cfg, mask=None):
         hm_cloud = hm_cloud[mask]
     hm_cloud = hm_cloud.reshape([-1, 3])
     return hm_cloud
+
+
+def filter_column(cloud : np.ndarray,
+                  d_max : float,
+                  pose=None,
+                  size=None,
+                  phi=None,
+                  prob=0.5) -> np.ndarray:
+    """ Mask out a column of points in a 3D point cloud.
+    :param points: (N, 3) array of points in the point cloud.
+    :param d_max: float, maximum distance from the origin to the column center.
+    :param prob: float, probability of removing a column.
+    :return: boolean mask of shape (N,) where True indicates that the point is outside the column.
+    """
+    if np.random.rand() > prob:
+        # Do not remove a column
+        mask = np.ones(len(cloud), dtype=bool)
+        return mask
+
+    # Ensure points are in (N, 3) format (x, y, z)
+    points = position(cloud)
+
+    if pose is None:
+        pose = np.random.uniform(-d_max*0.8, d_max*0.8, (2,))
+    if size is None:
+        size = np.random.uniform(0.4, 0.6, (2,)) * d_max
+    if phi is None:
+        phi = np.random.uniform(-np.pi, np.pi)
+
+    # A column pose (x, y, phi) and size (dx, dy)
+    x, y = pose
+    dx, dy = size
+    # print(f'Column center: ({x:.2f}, {y:.2f}), dx: {dx:.2f}, dy: {dy:.2f}, phi: {phi:.2f}')
+    Rz = np.array([[np.cos(phi), -np.sin(phi), 0],
+                   [np.sin(phi), np.cos(phi), 0],
+                   [0, 0, 1]])
+
+    # Rotate the points
+    points_rot = points @ Rz.T
+
+    # Rotate the mask center (x, y) into the rotated frame
+    xy_rot = np.array([x, y, 0]) @ Rz.T
+
+    # Apply the mask in the rotated frame
+    column_mask = (np.abs(points_rot[:, 0] - xy_rot[0]) > dx / 2) | \
+                  (np.abs(points_rot[:, 1] - xy_rot[1]) > dy / 2)
+    return column_mask

@@ -1,9 +1,3 @@
-"""
-Copyright (C) 2020 NVIDIA Corporation.  All rights reserved.
-Licensed under the NVIDIA Source Code License. See LICENSE at https://github.com/nv-tlabs/lift-splat-shoot.
-Authors: Jonah Philion and Sanja Fidler
-"""
-
 import numpy as np
 import torch
 import torchvision
@@ -35,12 +29,12 @@ def cam_to_ego(points, rot, trans, intrins):
     return points
 
 
-def get_only_in_img_mask(pts, H, W):
+def get_only_in_img_mask(points, H, W):
     """pts should be 3 x N
     """
-    return (pts[2] > 0) &\
-        (pts[0] > 1) & (pts[0] < W - 1) &\
-        (pts[1] > 1) & (pts[1] < H - 1)
+    return (points[2] > 0) &\
+           (points[0] > 1) & (points[0] < W - 1) &\
+           (points[1] > 1) & (points[1] < H - 1)
 
 
 def get_rot(h):
@@ -107,7 +101,7 @@ normalize_img = torchvision.transforms.Compose((
 resize_img = torchvision.transforms.Resize(512, interpolation=Image.BICUBIC)
 
 
-def sample_augmentation(lss_cfg, is_train=False):
+def get_image_augmentations(lss_cfg, is_train=False):
     H, W = lss_cfg['data_aug_conf']['H'], lss_cfg['data_aug_conf']['W']
     fH, fW = lss_cfg['data_aug_conf']['final_dim']
     if is_train:

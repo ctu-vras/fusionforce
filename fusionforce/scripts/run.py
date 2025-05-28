@@ -11,7 +11,7 @@ import argparse
 from fusionforce.models.traj_predictor.dphys_config import DPhysConfig
 from fusionforce.models.traj_predictor.dphysics import DPhysics, generate_controls
 from fusionforce.models.terrain_encoder.lss import LiftSplatShoot
-from fusionforce.models.terrain_encoder.utils import denormalize_img, normalize_img, img_transform, sample_augmentation
+from fusionforce.models.terrain_encoder.utils import denormalize_img, normalize_img, img_transform, get_image_augmentations
 from fusionforce.utils import read_yaml, load_calib
 from fusionforce.vis import visualize_imgs
 
@@ -98,7 +98,7 @@ class FusionForce:
             post_rot = torch.eye(2)
             post_tran = torch.zeros(2)
             # augmentation (resize, crop, horizontal flip, rotate)
-            resize, resize_dims, crop, flip, rotate = sample_augmentation(self.lss_config)
+            resize, resize_dims, crop, flip, rotate = get_image_augmentations(self.lss_config)
             img, post_rot2, post_tran2 = img_transform(img, post_rot, post_tran,
                                                        resize=resize,
                                                        resize_dims=resize_dims,

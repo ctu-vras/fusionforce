@@ -13,7 +13,7 @@ from fusionforce.utils import read_yaml, timing, load_calib
 from fusionforce.models.terrain_encoder.lss import LiftSplatShoot
 from fusionforce.models.terrain_encoder.voxelnet import VoxelNet
 from fusionforce.models.terrain_encoder.bevfusion import BEVFusion
-from fusionforce.models.terrain_encoder.utils import img_transform, normalize_img, sample_augmentation
+from fusionforce.models.terrain_encoder.utils import img_transform, normalize_img, get_image_augmentations
 from sensor_msgs.msg import CompressedImage, CameraInfo, PointCloud2
 from time import time
 from message_filters import ApproximateTimeSynchronizer, Subscriber
@@ -128,7 +128,7 @@ class TerrainEncoder:
         # preprocessing parameters (resize, crop)
         lss_cfg = copy(self.lss_cfg)
         lss_cfg['data_aug_conf']['H'], lss_cfg['data_aug_conf']['W'] = img.shape[:2]
-        resize, resize_dims, crop, flip, rotate = sample_augmentation(lss_cfg, is_train=False)
+        resize, resize_dims, crop, flip, rotate = get_image_augmentations(lss_cfg, is_train=False)
         img, post_rot2, post_tran2 = img_transform(PILImage.fromarray(img), post_rot, post_tran,
                                                    resize=resize,
                                                    resize_dims=resize_dims,

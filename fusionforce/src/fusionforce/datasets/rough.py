@@ -6,24 +6,18 @@ import torchvision
 from scipy.spatial.transform import Rotation
 from torch.utils.data import Dataset
 from ..models.terrain_encoder.utils import img_transform, normalize_img, resize_img
-from ..models.terrain_encoder.utils import ego_to_cam, get_only_in_img_mask, sample_augmentation
+from ..models.terrain_encoder.utils import ego_to_cam, get_only_in_img_mask, get_image_augmentations
 from ..models.traj_predictor.dphys_config import DPhysConfig
 from ..transformations import transform_cloud, position
 from ..cloudproc import estimate_heightmap, hm_to_cloud
 from ..utils import position, read_yaml
-from ..cloudproc import filter_grid
+from ..cloudproc import filter_grid, filter_column
 from ..utils import normalize, load_calib
 from .wildscenes import METAINFO as WILDSCENES_METAINFO
 from PIL import Image
 from tqdm import tqdm
 import open3d as o3d
 
-
-__all__ = [
-    'data_dir',
-    'ROUGH',
-    'rough_seq_paths',
-]
 
 monoforce_dir = os.path.realpath(os.path.join(os.path.dirname(__file__), '..', '..', '..'))
 data_dir = os.path.realpath(os.path.join(monoforce_dir, 'data'))
@@ -468,7 +462,7 @@ class ROUGH(Dataset):
             post_tran = torch.zeros(2)
 
             # augmentation (resize, crop, horizontal flip, rotate)
-            resize, resize_dims, crop, flip, rotate = sample_augmentation(self.lss_cfg, is_train=self.is_train)
+            resize, resize_dims, crop, flip, rotate = get_image_augmentations(self.lss_cfg, is_train=self.is_train)
             img, post_rot2, post_tran2 = img_transform(img, post_rot, post_tran,
                                                        resize=resize,
                                                        resize_dims=resize_dims,
@@ -654,3 +648,63 @@ class ROUGH(Dataset):
                 control_ts, controls,
                 pose0,
                 traj_ts, Xs, Xds, Rs, Omegas)
+
+
+class PointsROUGH(ROUGH):
+    def __init__(self, path, lss_cfg=None, dphys_cfg=DPhysConfig(), is_train=True):
+        super(PointsROUGH, self).__init__(path, lss_cfg, dphys_cfg=dphys_cfg, is_train=is_train)
+
+    def get_cloud(self, i, gravity_aligned=True, apply_augs=False):
+        cloud = self.get_raw_cloud(i)
+
+        # move points to robot frame
+        Tr = self.calib['transformations']['T_base_link__os_sensor']['data']
+        Tr = np.asarray(Tr, dtype=float).reshape((4, 4))
+        cloud = transform_cloud(cloud, Tr)
+
+        if gravity_aligned:
+            # gravity-alignment
+            pose_gravity_aligned = self.get_initial_pose_on_heightmap(i)
+            cloud = transform_cloud(cloud, pose_gravity_aligned)
+
+        # we don't apply augmentations during training for point clouds used for height map estimation
+        if self.is_train and apply_augs:
+            # apply augmentations to the point cloud
+            mask = filter_column(cloud, d_max=self.dphys_cfg.d_max, prob=1.0)
+            cloud = cloud[mask]
+
+        return cloud
+
+    def get_sample(self, i):
+        points = torch.as_tensor(position(self.get_cloud(i, apply_augs=True))).T
+        control_ts, controls = self.get_controls(i)
+        traj_ts, states = self.get_states_traj(i)
+        xs, xds, Rs, omegas = states
+        hm_geom = self.get_geom_height_map(i)
+        hm_terrain = self.get_terrain_height_map(i)
+        pose0 = torch.as_tensor(self.get_initial_pose_on_heightmap(i), dtype=torch.float32)
+        return (points, hm_geom, hm_terrain,
+                control_ts, controls,
+                pose0,
+                traj_ts, xs, xds, Rs, omegas)
+
+
+class FusionROUGH(PointsROUGH):
+    def __init__(self, path, lss_cfg=None, dphys_cfg=DPhysConfig(), is_train=True):
+        super(FusionROUGH, self).__init__(path, lss_cfg, dphys_cfg=dphys_cfg, is_train=is_train)
+
+    def get_sample(self, i):
+        imgs, rots, trans, intrins, post_rots, post_trans = self.get_images_data(i)
+        points = torch.as_tensor(position(self.get_cloud(i, apply_augs=True))).T
+        control_ts, controls = self.get_controls(i)
+        traj_ts, states = self.get_states_traj(i)
+        xs, xds, Rs, omegas = states
+        hm_geom = self.get_geom_height_map(i)
+        hm_terrain = self.get_terrain_height_map(i)
+        pose0 = torch.as_tensor(self.get_initial_pose_on_heightmap(i), dtype=torch.float32)
+        return (imgs, rots, trans, intrins, post_rots, post_trans,
+                hm_geom, hm_terrain,
+                control_ts, controls,
+                pose0,
+                traj_ts, xs, xds, Rs, omegas,
+                points)

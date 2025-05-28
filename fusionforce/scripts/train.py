@@ -12,8 +12,8 @@ from fusionforce.models.terrain_encoder.voxelnet import VoxelNet
 from fusionforce.models.terrain_encoder.bevfusion import BEVFusion
 from fusionforce.models.traj_predictor.dphysics import DPhysics
 from fusionforce.models.traj_predictor.dphys_config import DPhysConfig
-from fusionforce.datasets.rough import ROUGH
-from fusionforce.utils import read_yaml, write_to_yaml, str2bool, compile_data, position
+from fusionforce.datasets.rough import ROUGH, PointsROUGH, FusionROUGH
+from fusionforce.utils import read_yaml, write_to_yaml, str2bool, compile_data
 from fusionforce.losses import hm_loss, physics_loss
 from tqdm import tqdm
 from torch.utils.tensorboard import SummaryWriter
@@ -32,7 +32,7 @@ def arg_parser():
     parser.add_argument('--lss_cfg_path', type=str, default='../config/lss_cfg.yaml', help='Path to LSS config')
     parser.add_argument('--pretrained_model_path', type=str, default=None, help='Path to pretrained model')
     parser.add_argument('--debug', type=str2bool, default=True, help='Debug mode: use small datasets')
-    parser.add_argument('--vis', type=str2bool, default=False, help='Visualize training samples')
+    parser.add_argument('--vis', type=str2bool, default=True, help='Visualize training samples')
     parser.add_argument('--geom_weight', type=float, default=1.0, help='Weight for geometry loss')
     parser.add_argument('--terrain_weight', type=float, default=2.0, help='Weight for terrain heightmap loss')
     parser.add_argument('--phys_weight', type=float, default=1.0, help='Weight for physics loss')
@@ -140,7 +140,7 @@ class TrainerCore:
             self.terrain_encoder.eval()
 
         max_grad_norm = 1.0
-        epoch_losses = {}
+        epoch_losses = {'total': 0.0}
         for batch in tqdm(loader, total=len(loader)):
             if train:
                 self.optimizer.zero_grad()
@@ -440,30 +440,13 @@ class TrainerLSS(TrainerCore):
         return terrain, states_pred
 
 
-class Points(ROUGH):
-    def __init__(self, path, lss_cfg=None, dphys_cfg=DPhysConfig(), is_train=True):
-        super(Points, self).__init__(path, lss_cfg, dphys_cfg=dphys_cfg, is_train=is_train)
-
-    def get_sample(self, i):
-        points = torch.as_tensor(position(self.get_cloud(i))).T
-        control_ts, controls = self.get_controls(i)
-        traj_ts, states = self.get_states_traj(i)
-        xs, xds, Rs, omegas = states
-        hm_geom = self.get_geom_height_map(i)
-        hm_terrain = self.get_terrain_height_map(i)
-        pose0 = torch.as_tensor(self.get_initial_pose_on_heightmap(i), dtype=torch.float32)
-        return (points, hm_geom, hm_terrain,
-                control_ts, controls,
-                pose0,
-                traj_ts, xs, xds, Rs, omegas)
-
 class TrainerVoxelNet(TrainerCore):
         def __init__(self, dphys_cfg, lss_cfg, model='voxelnet', bsz=1, lr=1e-3, nepochs=1000,
                     pretrained_model_path=None, debug=False, vis=False, geom_weight=1.0, terrain_weight=1.0, phys_weight=0.1):
             super().__init__(dphys_cfg, lss_cfg, model, nepochs, debug, geom_weight, terrain_weight, phys_weight)
 
             # create dataloaders
-            self.train_loader, self.val_loader = self.create_dataloaders(bsz=bsz, debug=debug, vis=vis, Data=Points)
+            self.train_loader, self.val_loader = self.create_dataloaders(bsz=bsz, debug=debug, vis=vis, Data=PointsROUGH)
 
             # load models: terrain encoder
             self.terrain_encoder = VoxelNet(grid_conf=self.lss_cfg['grid_conf'],
@@ -529,26 +512,6 @@ class TrainerVoxelNet(TrainerCore):
             return terrain, states_pred
 
 
-class Fusion(ROUGH):
-    def __init__(self, path, lss_cfg=None, dphys_cfg=DPhysConfig(), is_train=True):
-        super(Fusion, self).__init__(path, lss_cfg, dphys_cfg=dphys_cfg, is_train=is_train)
-
-    def get_sample(self, i):
-        imgs, rots, trans, intrins, post_rots, post_trans = self.get_images_data(i)
-        points = torch.as_tensor(position(self.get_cloud(i))).T
-        control_ts, controls = self.get_controls(i)
-        traj_ts, states = self.get_states_traj(i)
-        xs, xds, Rs, omegas = states
-        hm_geom = self.get_geom_height_map(i)
-        hm_terrain = self.get_terrain_height_map(i)
-        pose0 = torch.as_tensor(self.get_initial_pose_on_heightmap(i), dtype=torch.float32)
-        return (imgs, rots, trans, intrins, post_rots, post_trans,
-                hm_geom, hm_terrain,
-                control_ts, controls,
-                pose0,
-                traj_ts, xs, xds, Rs, omegas,
-                points)
-
 class TrainerBEVFusion(TrainerCore):
 
     def __init__(self, dphys_cfg, lss_cfg, model='bevfusion', bsz=1, lr=1e-3, nepochs=1000,
@@ -556,7 +519,7 @@ class TrainerBEVFusion(TrainerCore):
         super().__init__(dphys_cfg, lss_cfg, model, nepochs, debug, geom_weight, terrain_weight, phys_weight)
 
         # create dataloaders
-        self.train_loader, self.val_loader = self.create_dataloaders(bsz=bsz, debug=debug, vis=vis, Data=Fusion)
+        self.train_loader, self.val_loader = self.create_dataloaders(bsz=bsz, debug=debug, vis=vis, Data=FusionROUGH)
 
         # load models: terrain encoder
         self.terrain_encoder = BEVFusion(grid_conf=self.lss_cfg['grid_conf'],

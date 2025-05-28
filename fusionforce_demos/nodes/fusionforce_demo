@@ -7,7 +7,7 @@ import torchvision
 import PIL as pillow
 import rospy
 from numpy.lib.recfunctions import unstructured_to_structured
-from fusionforce.datasets import ROUGH
+from fusionforce.datasets import FusionROUGH
 from fusionforce.models.traj_predictor.dphys_config import DPhysConfig
 from fusionforce.models.traj_predictor.dphysics import DPhysics, generate_controls
 from fusionforce.ros import height_map_to_gridmap_msg, poses_to_path, to_tf, xyz_to_point
@@ -20,31 +20,10 @@ from sensor_msgs.msg import PointCloud2, Image, CameraInfo
 from nav_msgs.msg import Path
 from grid_map_msgs.msg import GridMap
 from ros_numpy import msgify
-from fusionforce.utils import read_yaml, position
+from fusionforce.utils import read_yaml
 import rospkg
 import tf2_ros
 from visualization_msgs.msg import Marker, MarkerArray
-
-
-class FusionData(ROUGH):
-    def __init__(self, path, lss_cfg=None, dphys_cfg=DPhysConfig(), is_train=False):
-        super(FusionData, self).__init__(path, lss_cfg, dphys_cfg=dphys_cfg, is_train=is_train)
-
-    def get_sample(self, i):
-        imgs, rots, trans, intrins, post_rots, post_trans = self.get_images_data(i)
-        points = torch.as_tensor(position(self.get_cloud(i))).T
-        control_ts, controls = self.get_controls(i)
-        traj_ts, states = self.get_states_traj(i)
-        xs, xds, Rs, omegas = states
-        hm_geom = self.get_geom_height_map(i)
-        hm_terrain = self.get_terrain_height_map(i)
-        pose0 = torch.as_tensor(self.get_initial_pose_on_heightmap(i), dtype=torch.float32)
-        return (imgs, rots, trans, intrins, post_rots, post_trans,
-                hm_geom, hm_terrain,
-                control_ts, controls,
-                pose0,
-                traj_ts, xs, xds, Rs, omegas,
-                points)
 
 
 class FusionForce:
@@ -210,7 +189,7 @@ class FusionForce:
         return states, forces
 
     def run(self):
-        _, ds = compile_data(dphys_cfg=self.dphys_cfg, lss_cfg=self.lss_cfg, Data=FusionData)
+        _, ds = compile_data(dphys_cfg=self.dphys_cfg, lss_cfg=self.lss_cfg, Data=FusionROUGH)
         rospy.loginfo('Loaded dataset with %d samples' % len(ds))
         rospy.loginfo('Using sample number %d' % self.sample_i)
 

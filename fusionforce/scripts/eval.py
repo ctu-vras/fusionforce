@@ -3,6 +3,7 @@
 import sys
 sys.path.append('../src/')
 from tqdm import tqdm
+from time import time
 import matplotlib.pyplot as plt
 import os
 import numpy as np
@@ -15,11 +16,10 @@ from fusionforce.models.traj_predictor.dphysics import DPhysics
 from fusionforce.models.terrain_encoder.lss import LiftSplatShoot
 from fusionforce.models.terrain_encoder.voxelnet import VoxelNet
 from fusionforce.models.terrain_encoder.bevfusion import BEVFusion
-from fusionforce.cloudproc import position
 from fusionforce.models.terrain_encoder.utils import ego_to_cam, get_only_in_img_mask, denormalize_img
 from fusionforce.utils import read_yaml, write_to_csv, append_to_csv, compile_data, str2bool
 from fusionforce.losses import physics_loss, hm_loss
-from fusionforce.datasets import ROUGH
+from fusionforce.datasets import FusionROUGH
 
 
 def arg_parser():
@@ -31,27 +31,6 @@ def arg_parser():
     parser.add_argument('--traj_predictor', type=str, default='dphysics', help='Trajectory predictor model')
     parser.add_argument('--vis', type=str2bool, default=False, help='Visualize the results')
     return parser.parse_args()
-
-
-class FusionData(ROUGH):
-    def __init__(self, path, lss_cfg=None, dphys_cfg=DPhysConfig(), is_train=False):
-        super(FusionData, self).__init__(path, lss_cfg, dphys_cfg=dphys_cfg, is_train=is_train)
-
-    def get_sample(self, i):
-        imgs, rots, trans, intrins, post_rots, post_trans = self.get_images_data(i)
-        points = torch.as_tensor(position(self.get_cloud(i))).T
-        control_ts, controls = self.get_controls(i)
-        traj_ts, states = self.get_states_traj(i)
-        Xs, Xds, Rs, Omegas = states
-        hm_geom = self.get_geom_height_map(i)
-        hm_terrain = self.get_terrain_height_map(i)
-        pose0 = torch.as_tensor(self.get_initial_pose_on_heightmap(i), dtype=torch.float32)
-        return (imgs, rots, trans, intrins, post_rots, post_trans,
-                hm_geom, hm_terrain,
-                control_ts, controls,
-                pose0,
-                traj_ts, Xs, Xds, Rs, Omegas,
-                points)
 
 
 class Eval:
@@ -75,7 +54,7 @@ class Eval:
         self.loader = self.get_dataloader(batch_size=batch_size, seq=seq)
 
         # output folder to write evaluation results
-        self.output_folder = (f'./gen/eval_{os.path.basename(seq)}/'
+        self.output_folder = (f'./gen/eval_{os.path.basename(seq)}_{time()}/'
                               f'{self.terrain_encoder.__class__.__name__}_'
                               f'{self.traj_predictor.__class__.__name__}')
 
@@ -137,9 +116,9 @@ class Eval:
     def get_dataloader(self, batch_size=1, seq='val'):
         if seq != 'val':
             print('Loading dataset from:', seq)
-            val_ds = FusionData(path=seq, lss_cfg=self.lss_cfg, dphys_cfg=self.dphys_cfg)
+            val_ds = FusionROUGH(path=seq, lss_cfg=self.lss_cfg, dphys_cfg=self.dphys_cfg)
         else:
-            _, val_ds = compile_data(lss_cfg=self.lss_cfg, dphys_cfg=self.dphys_cfg, Data=FusionData)
+            _, val_ds = compile_data(lss_cfg=self.lss_cfg, dphys_cfg=self.dphys_cfg, Data=FusionROUGH)
         loader = DataLoader(val_ds, batch_size=batch_size, shuffle=False)
         return loader
 
