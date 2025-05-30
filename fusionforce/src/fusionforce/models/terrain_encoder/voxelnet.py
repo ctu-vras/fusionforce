@@ -98,7 +98,7 @@ class VoxelNet(nn.Module):
         super().__init__()
 
         self.lidar_net = LidarNet(grid_conf=grid_conf, out_channels=n_features)
-        self.bevencode = BevEncode(inC=n_features, outC=outC)
+        self.bevencode = BevEncode(in_channels=n_features, out_channels=outC)
 
     def forward(self, points):
         # Get features from LiDAR inputs

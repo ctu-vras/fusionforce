@@ -5,11 +5,11 @@ from .lss import LiftSplatShoot, BevEncode
 
 
 class BEVFusion(nn.Module):
-    def __init__(self, grid_conf, data_aug_conf, outC=1):
+    def __init__(self, grid_conf, data_aug_conf, out_channels=1):
         super().__init__()
         self.lss = LiftSplatShoot(grid_conf, data_aug_conf)
         self.lidar_net = LidarNet(grid_conf=grid_conf, out_channels=64)
-        self.bevencode = BevEncode(inC=2*64, outC=outC)
+        self.bevencode = BevEncode(in_channels=2*64, out_channels=out_channels)
 
     def forward(self, img_inputs, cloud_input):
         # Get BEV features from camera inputs
@@ -22,7 +22,10 @@ class BEVFusion(nn.Module):
         feat_bev = torch.cat([cam_feat_bev, lidar_feat_bev], dim=1)  # Shape (B, 2xZ, X, Y)
 
         # Encode the concatenated BEV features
-        out = self.bevencode(feat_bev)  # Shape (B, 1, X, Y)
+        feat_bev = self.bevencode.backbone(feat_bev)  # Shape (B, 2xZ, X, Y)
+
+        # Apply the up-convolutional heads
+        out = self.bevencode.heads(feat_bev)  # Shape (B, outC, X, Y)
 
         return out
 

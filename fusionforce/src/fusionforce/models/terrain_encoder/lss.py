@@ -99,11 +99,11 @@ class CamEncode(nn.Module):
         return x
 
 class BevEncode(nn.Module):
-    def __init__(self, inC, outC):
+    def __init__(self, in_channels, out_channels):
         super(BevEncode, self).__init__()
 
         trunk = resnet18(zero_init_residual=True)
-        self.conv1 = nn.Conv2d(inC, 64, kernel_size=7, stride=2, padding=3, bias=False)
+        self.conv1 = nn.Conv2d(in_channels, 64, kernel_size=7, stride=2, padding=3, bias=False)
         self.bn1 = trunk.bn1
         self.relu = trunk.relu
 
@@ -117,7 +117,7 @@ class BevEncode(nn.Module):
             nn.Conv2d(256, 128, kernel_size=3, padding=1, bias=False),
             nn.BatchNorm2d(128),
             nn.GELU(),
-            nn.Conv2d(128, outC, kernel_size=1, padding=0),
+            nn.Conv2d(128, out_channels, kernel_size=1, padding=0),
             ScaledTanh(-1, 1)
         )
         self.up_diff = nn.Sequential(
@@ -125,7 +125,7 @@ class BevEncode(nn.Module):
             nn.Conv2d(256, 128, kernel_size=3, padding=1, bias=False),
             nn.BatchNorm2d(128),
             nn.GELU(),
-            nn.Conv2d(128, outC, kernel_size=1, padding=0),
+            nn.Conv2d(128, out_channels, kernel_size=1, padding=0),
             nn.ReLU()
         )
         self.up_friction = nn.Sequential(
@@ -133,7 +133,7 @@ class BevEncode(nn.Module):
             nn.Conv2d(256, 128, kernel_size=3, padding=1, bias=False),
             nn.BatchNorm2d(128),
             nn.GELU(),
-            nn.Conv2d(128, outC, kernel_size=1, padding=0),
+            nn.Conv2d(128, out_channels, kernel_size=1, padding=0),
             nn.ReLU()
         )
 
@@ -150,8 +150,7 @@ class BevEncode(nn.Module):
 
         return x
 
-    def forward(self, x):
-        x = self.backbone(x)
+    def heads(self, x):
         x_geom = self.up_geom(x)
         x_diff = self.up_diff(x)
         x_friction = self.up_friction(x)
@@ -164,8 +163,14 @@ class BevEncode(nn.Module):
         }
         return out
 
+    def forward(self, x):
+        x = self.backbone(x)
+        x = self.heads(x)
+        return x
+
+
 class LiftSplatShoot(nn.Module):
-    def __init__(self, grid_conf, data_aug_conf, outC=1):
+    def __init__(self, grid_conf, data_aug_conf, out_channels=1):
         super(LiftSplatShoot, self).__init__()
         self.grid_conf = grid_conf
         self.data_aug_conf = data_aug_conf
@@ -183,7 +188,7 @@ class LiftSplatShoot(nn.Module):
         self.frustum = self.create_frustum()
         self.D, _, _, _ = self.frustum.shape
         self.camencode = CamEncode(self.D, self.camC)
-        self.bevencode = BevEncode(inC=self.camC, outC=outC)
+        self.bevencode = BevEncode(in_channels=self.camC, out_channels=out_channels)
 
         # toggle using QuickCumsum vs. autograd
         self.use_quickcumsum = True

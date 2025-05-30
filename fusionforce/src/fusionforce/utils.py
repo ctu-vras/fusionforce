@@ -194,7 +194,7 @@ def explore_data(ds, sample_range='random', save=False):
 
     lss_cfg = ds.lss_cfg
     d_max = lss_cfg['grid_conf']['xbound'][1]
-    model = LiftSplatShoot(lss_cfg['grid_conf'], lss_cfg['data_aug_conf'], outC=1)
+    model = LiftSplatShoot(lss_cfg['grid_conf'], lss_cfg['data_aug_conf'], out_channels=1)
 
     H, W = ds.lss_cfg['data_aug_conf']['H'], ds.lss_cfg['data_aug_conf']['W']
     cams = ds.camera_names
