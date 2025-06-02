@@ -2,7 +2,6 @@
 <launch>
     <arg name="rviz" default="true" doc="Launch RViz for data visualization or not"/>
     <arg name="gui" default="false" doc="Launch Gazebo GUI or not"/>
-    <arg name="robot" default="marv" doc="Robot name"/>
     <arg name="world" default="$(find fusionforce_gazebo)/worlds/terrain_vegetation.world"/>
 
     <!-- Gazebo world and spawn Husky robot -->
@@ -13,13 +12,11 @@
     
     <!-- FusionForce -->
     <include file="$(find fusionforce)/launch/fusionforce.launch">
-        <arg name="robot" value="$(arg robot)"/>
         <arg name="terrain_encoder" value="voxelnet" doc="Terrain encoder type: lss, voxelnet, bevfusion"/>
-
         <arg name="img_topics" value="['/camera_front/image_color/compressed',
                                        '/camera_left/image_color/compressed',
                                        '/camera_rear/image_color/compressed',
-                                       '/camera_right/image_color/compressed',]"/>
+                                       '/camera_right/image_color/compressed']"/>
         <arg name="camera_info_topics" value="['/camera_front/camera_info',
                                                '/camera_left/camera_info',
                                                '/camera_rear/camera_info',
