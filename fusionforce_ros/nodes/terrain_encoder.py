@@ -5,25 +5,28 @@ from copy import copy
 from threading import RLock
 import torch
 import numpy as np
-import rospy
-from cv_bridge import CvBridge
-from grid_map_msgs.msg import GridMap
+from time import time
+from PIL import Image as PILImage
+from scipy.spatial.transform import Rotation
+
 from fusionforce.ros import height_map_to_gridmap_msg, cloud_msg_to_numpy
 from fusionforce.utils import read_yaml, timing, load_calib
 from fusionforce.models.terrain_encoder.lss import LiftSplatShoot
 from fusionforce.models.terrain_encoder.voxelnet import VoxelNet
 from fusionforce.models.terrain_encoder.bevfusion import BEVFusion
 from fusionforce.models.terrain_encoder.utils import img_transform, normalize_img, get_image_augmentations
+
+import rospy
+import rospkg
+from cv_bridge import CvBridge
+from grid_map_msgs.msg import GridMap
 from sensor_msgs.msg import CompressedImage, CameraInfo, PointCloud2
-from time import time
 from message_filters import ApproximateTimeSynchronizer, Subscriber
 import tf2_ros
-from PIL import Image as PILImage
 from ros_numpy import numpify
-from scipy.spatial.transform import Rotation
 
 
-lib_path = os.path.join(__file__, '..', '..', '..')
+lib_path = rospkg.RosPack().get_path('fusionforce').replace('fusionforce_ros', 'fusionforce')
 
 
 class TerrainEncoder:
@@ -49,7 +52,7 @@ class TerrainEncoder:
         assert len(self.img_topics) == len(self.camera_info_topics)
         self.cloud_topic = rospy.get_param('~cloud_topic', '/points')
 
-        self.model = rospy.get_param('~model', 'lss')
+        self.model = rospy.get_param('~terrain_encoder', 'lss')
         self.terrain_encoder = self.load_terrain_encoder(model=self.model)
 
         # cv bridge
@@ -67,7 +70,7 @@ class TerrainEncoder:
         self.max_age = rospy.get_param('~max_age', 0.2)
 
     def load_terrain_encoder(self, model='lss'):
-        weights = rospy.get_param('~weights', os.path.join(lib_path, f'config/weights/{model}/val.pth'))
+        weights = os.path.join(lib_path, f'config/weights/{model}/val.pth')
         rospy.loginfo('Loading terrain endoder from %s' % weights)
         if not os.path.exists(weights):
             rospy.logerr('Model weights file %s does not exist. Using random weights.' % weights)
@@ -262,8 +265,7 @@ class TerrainEncoder:
         if self.rate is not None:
             self.rate.sleep()
 
-    def cam_msgs_to_terrain(self, msgs):
-        t0 = time()
+    def cam_msgs_to_input(self, msgs):
         n = len(msgs)
         assert n % 2 == 0
         for i in range(n // 2):
@@ -273,32 +275,34 @@ class TerrainEncoder:
                 'Image and CameraInfo messages must have the same frame_id'
         img_msgs = msgs[:n // 2]
         info_msgs = msgs[n // 2:]
-        inputs = self.get_lss_inputs(img_msgs, info_msgs)
-        inputs = [i.to(self.device) for i in inputs]
-        t1 = time()
-        rospy.logdebug('Preprocessing time: %.3f [sec]' % (t1 - t0))
-        # model inference
-        terrain = self.terrain_encoder(*inputs)
-        rospy.loginfo('LSS inference time: %.3f [sec]' % (time() - t1))
-        return terrain
+        cam_inputs = self.get_lss_inputs(img_msgs, info_msgs)
+        cam_inputs = [i.to(self.device) for i in cam_inputs]
+        return cam_inputs
 
-    def cloud_msg_to_terrain(self, msg):
+    def cloud_msg_to_input(self, msg):
         assert isinstance(msg, PointCloud2)
         points = cloud_msg_to_numpy(msg)
         points_input = torch.as_tensor(points, dtype=torch.float32).to(self.device)
-        points_input = points_input[None].T  # (3, N)
-        terrain = self.terrain_encoder(points_input)
+        points_input = points_input.T[None]  # (1, 3, N)
+        return points_input
+
+    def msgs_to_terrain(self, msgs):
+        if self.model == 'lss':
+            cam_inputs = self.cam_msgs_to_input(msgs)
+            terrain = self.terrain_encoder(*cam_inputs)
+        elif self.model == 'voxelnet':
+            points_input = self.cloud_msg_to_input(msgs[-1])
+            terrain = self.terrain_encoder(points_input)
+        elif self.model == 'bevfusion':
+            cam_inputs = self.cam_msgs_to_input(msgs[:-1])
+            points_input = self.cloud_msg_to_input(msgs[-1])
+            terrain = self.terrain_encoder(cam_inputs, points_input)
+        else:
+            raise RuntimeError(f'Unknown model {self.model}. Supported are lss, voxelnet, and bevfusion.')
         return terrain
 
     def proc(self, *msgs):
-        if self.model == 'lss':
-            terrain = self.cam_msgs_to_terrain(msgs)
-        elif self.model == 'voxelnet':
-            terrain = self.cloud_msg_to_terrain(msgs[0])
-        elif self.model == 'bevfusion':
-            raise NotImplementedError
-        else:
-            raise RuntimeError(f'Unknown model {self.model}. Supported are lss, voxelnet, and bevfusion.')
+        terrain = self.msgs_to_terrain(msgs)
 
         # publish height map as grid map
         height_terrain, friction = terrain['terrain'], terrain['friction']

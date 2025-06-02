@@ -25,7 +25,6 @@ class FusionForce(TerrainEncoder):
         super(FusionForce, self).__init__(lss_cfg)
         # differentiable physics configs
         self.robot = rospy.get_param('~robot', 'robot')
-        self.allow_backward = rospy.get_param('~allow_backward', True)
         self.dphys_cfg = DPhysConfig(robot=self.robot)
         self.physics_engine = DPhysics(self.dphys_cfg, device=self.device)
         self.controls = self.init_controls()
@@ -138,18 +137,8 @@ class FusionForce(TerrainEncoder):
 
     @timing
     def proc(self, *msgs):
-        n = len(msgs)
-        assert n % 2 == 0
-        for i in range(n // 2):
-            assert isinstance(msgs[i], CompressedImage), 'First %d messages must be CompressedImage' % (n // 2)
-            assert isinstance(msgs[i + n // 2], CameraInfo), 'Last %d messages must be CameraInfo' % (n // 2)
-            assert msgs[i].header.frame_id == msgs[i + n // 2].header.frame_id, \
-                'Image and CameraInfo messages must have the same frame_id'
-        img_msgs = msgs[:n // 2]
-        info_msgs = msgs[n // 2:]
-        inputs = self.get_lss_inputs(img_msgs, info_msgs)
-        inputs = [i.to(self.device) for i in inputs]
-        terrain = self.terrain_encoder(*inputs)
+        terrain = self.msgs_to_terrain(msgs)
+
         height_terrain, friction = terrain['terrain'], terrain['friction']
         rospy.loginfo('Predicted height map shape: %s' % str(height_terrain.shape))
 
