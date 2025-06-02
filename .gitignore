@@ -175,3 +175,4 @@ cython_debug/
 
 gen/
 data/
+.robot_cache/

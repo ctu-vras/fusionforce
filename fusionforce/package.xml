@@ -1,14 +1,17 @@
 <?xml version="1.0"?>
 <?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
 <package format="3">
-  <name>monoforce_gazebo</name>
+  <name>fusionforce</name>
   <version>0.0.1</version>
-  <description>Gazebo simulation for MonoForce model deployment experiments</description>
-  <maintainer email="agishrus@fel.cvut.cz">ruslan</maintainer>
-  <license>BSD-3-Clause</license>
+  <description>FusionForce: Learnable Physics Engine</description>
+  <maintainer email="agishrus@fel.cvut.cz">Ruslan Agishev</maintainer>
+  <license>MIT</license>
 
   <exec_depend>rclpy</exec_depend>
   <exec_depend>sensor_msgs</exec_depend>
+  <exec_depend>cv_bridge</exec_depend>
+  <exec_depend>image_transport</exec_depend>
+  <exec_depend>grid_map</exec_depend>
 
   <export>
     <build_type>ament_python</build_type>
