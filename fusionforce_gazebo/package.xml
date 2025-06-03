@@ -1,10 +1,10 @@
 <?xml version="1.0"?>
 <?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
 <package format="3">
-  <name>monoforce_gazebo</name>
+  <name>fusionforce_gazebo</name>
   <version>0.0.1</version>
-  <description>Gazebo simulation for MonoForce model deployment experiments</description>
-  <maintainer email="agishrus@fel.cvut.cz">ruslan</maintainer>
+  <description>Gazebo simulation for FusionForce model deployment experiments</description>
+  <maintainer email="agishrus@fel.cvut.cz">Ruslan Agishev</maintainer>
   <license>BSD-3-Clause</license>
 
   <exec_depend>rclpy</exec_depend>
