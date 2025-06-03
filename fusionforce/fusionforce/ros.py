@@ -25,7 +25,9 @@ def numpy_to_gridmap_layer(data: np.ndarray):
     data_array.layout.dim[1].label = 'row_index'
     data_array.layout.dim[1].size = data.shape[1]
     data_array.layout.dim[1].stride = data.shape[1]
-    data_array.data = rotate(data, 180).flatten().tolist()
+    # TODO: get rid of this hack
+    data = rotate(data, 180).T
+    data_array.data = data.flatten().tolist()
     return data_array
 
 def terrain_to_gridmap_msg(layers: list[np.ndarray], layer_names: list[str],
@@ -134,6 +136,7 @@ def gridmap_msg_to_numpy(grid_map_msg, layer_name='elevation'):
     grid_map = np.roll(grid_map, shift=-outer_start_index, axis=1)
     grid_map = np.roll(grid_map, shift=-inner_start_index, axis=0)
 
+    # TODO: remove this hack
     grid_map = rotate(grid_map, 180)
 
     return grid_map

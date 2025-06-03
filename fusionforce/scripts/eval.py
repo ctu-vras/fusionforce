@@ -11,14 +11,19 @@ import torch
 from torch.utils.data import DataLoader
 from collections import deque
 import argparse
+from time import time
+
 from fusionforce.models.physics_engine.engine.engine import DPhysicsEngine, PhysicsState
 from fusionforce.configs import WorldConfig, RobotModelConfig, PhysicsEngineConfig
 from fusionforce.models.physics_engine.engine.engine_state import vectorize_iter_of_states as vectorize_states
 from fusionforce.models.physics_engine.utils.environment import make_x_y_grids
 from fusionforce.models.terrain_encoder.lss import LiftSplatShoot
+from fusionforce.models.terrain_encoder.voxelnet import VoxelNet
+from fusionforce.models.terrain_encoder.bevfusion import BEVFusion
 from fusionforce.models.terrain_encoder.utils import ego_to_cam, get_only_in_img_mask, denormalize_img
 from fusionforce.utils import read_yaml, write_to_csv, append_to_csv, compile_data, str2bool
 from fusionforce.losses import trajectory_loss, terrain_loss
+from fusionforce.datasets.rough import ROUGH, PointsROUGH, FusionROUGH
 
 
 np.random.seed(0)
@@ -29,19 +34,21 @@ def arg_parser():
     parser = argparse.ArgumentParser(description='Terrain encoder predictor input arguments')
     parser.add_argument('--seq', type=str, default='val', help='Data sequence')
     parser.add_argument('--batch_size', type=int, default=1, help='Batch size')
+    parser.add_argument('--terrain_encoder_model', type=str, default='bevfusion')
     parser.add_argument('--pretrained_terrain_encoder_path', type=str, default=None,
                         help='Path to the trained LSS model')
-    parser.add_argument('--vis', type=str2bool, default=True, help='Visualize the results')
+    parser.add_argument('--vis', type=str2bool, default=False, help='Visualize the results')
     return parser.parse_args()
 
 
 class Evaluator:
     def __init__(self,
                  batch_size: int = 1,
+                 terrain_encoder_model: str = 'lss',
                  pretrained_terrain_encoder_path=None,
                  grid_res: float = 0.1,
                  max_coord: float = 6.4):
-        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        self.device = 'cpu'
         self.batch_size = batch_size
 
         # load configs
@@ -60,20 +67,71 @@ class Evaluator:
 
         # load LSS config
         self.lss_config = read_yaml(os.path.join('..', 'config/lss_cfg.yaml'))
+        self.terrain_encoder_model = terrain_encoder_model
         self.terrain_encoder = self.get_terrain_encoder(pretrained_terrain_encoder_path)
 
         self.grid_res = grid_res
 
+        # load datasets
+        _, self.val_loader = self.create_dataloaders()
+
+    def create_dataloaders(self, debug=False, vis=False):
+        if self.terrain_encoder_model == 'lss':
+            Data = ROUGH
+        elif self.terrain_encoder_model == 'voxelnet':
+            Data = PointsROUGH
+        elif self.terrain_encoder_model == 'bevfusion':
+            Data = FusionROUGH
+        else:
+            raise ValueError(f'Unknown terrain encoder model: {self.terrain_encoder_model}. Supported models: '
+                             f'lss, voxelnet, bevfusion')
+        # create dataset for model training
+        train_ds, val_ds = compile_data(small_data=debug, vis=vis, Data=Data)
+        train_loader = DataLoader(train_ds, batch_size=self.batch_size, shuffle=True, drop_last=True)
+        val_loader = DataLoader(val_ds, batch_size=self.batch_size, shuffle=False, drop_last=True)
+        return train_loader, val_loader
+
     def get_terrain_encoder(self, path):
-        terrain_encoder = LiftSplatShoot(self.lss_config['grid_conf'],
-                                         self.lss_config['data_aug_conf']).from_pretrained(path)
+        if self.terrain_encoder_model == 'lss':
+            terrain_encoder = LiftSplatShoot(self.lss_config['grid_conf'],
+                                             self.lss_config['data_aug_conf']).from_pretrained(path)
+        elif self.terrain_encoder_model == 'voxelnet':
+            terrain_encoder = VoxelNet(self.lss_config['grid_conf']).from_pretrained(path)
+        elif self.terrain_encoder_model == 'bevfusion':
+            terrain_encoder = BEVFusion(self.lss_config['grid_conf'],
+                                        self.lss_config['data_aug_conf']).from_pretrained(path)
+        else:
+            raise ValueError(f'Unknown terrain encoder model: {self.terrain_encoder_model}. Supported models: '
+                             f'lss, voxelnet, bevfusion')
         terrain_encoder.to(self.device)
         return terrain_encoder
 
     def predict_terrain(self, batch):
-        imgs, rots, trans, intrins, post_rots, post_trans = batch[:6]
-        img_inputs = (imgs, rots, trans, intrins, post_rots, post_trans)
-        terrain = self.terrain_encoder(*img_inputs)
+        if self.terrain_encoder_model == 'lss':
+            (imgs, rots, trans, intrins, post_rots, post_trans,
+             hm_geom, hm_terrain,
+             control_ts, controls,
+             traj_ts, xs, xds, qs, omegas, thetas) = batch
+            img_inputs = (imgs, rots, trans, intrins, post_rots, post_trans)
+            terrain = self.terrain_encoder(*img_inputs)
+        elif self.terrain_encoder_model == 'voxelnet':
+            (points, hm_geom, hm_terrain,
+             control_ts, controls,
+             pose0,
+             traj_ts, xs, xds, qs, omegas, thetas) = batch
+            terrain = self.terrain_encoder(points)
+        elif self.terrain_encoder_model == 'bevfusion':
+            (imgs, rots, trans, intrins, post_rots, post_trans,
+             hm_geom, hm_terrain,
+             control_ts, controls,
+             pose0,
+             traj_ts, xs, xds, qs, omegas, thetas,
+             points) = batch
+            img_inputs = (imgs, rots, trans, intrins, post_rots, post_trans)
+            terrain = self.terrain_encoder(img_inputs, points)
+        else:
+            raise ValueError(f'Unknown terrain encoder model: {self.terrain_encoder_model}. Supported models: '
+                             f'lss, voxelnet, bevfusion')
         return terrain
 
     def get_physics_engine(self):
@@ -82,10 +140,26 @@ class Evaluator:
         return engine
 
     def predict_states(self, terrain, batch):
-        (imgs, rots, trans, intrins, post_rots, post_trans,
-         hm_geom, hm_terrain,
-         control_ts, controls,
-         traj_ts, xs, xds, qs, omegas, thetas) = batch
+        if self.terrain_encoder_model == 'lss':
+            (imgs, rots, trans, intrins, post_rots, post_trans,
+             hm_geom, hm_terrain,
+             control_ts, controls,
+             traj_ts, xs, xds, qs, omegas, thetas) = batch
+        elif self.terrain_encoder_model == 'voxelnet':
+            (points, hm_geom, hm_terrain,
+             control_ts, controls,
+             pose0,
+             traj_ts, xs, xds, qs, omegas, thetas) = batch
+        elif self.terrain_encoder_model == 'bevfusion':
+            (imgs, rots, trans, intrins, post_rots, post_trans,
+             hm_geom, hm_terrain,
+             control_ts, controls,
+             pose0,
+             traj_ts, xs, xds, qs, omegas, thetas,
+             points) = batch
+        else:
+            raise ValueError(f'Unknown terrain encoder model: {self.terrain_encoder_model}. Supported models: '
+                             f'lss, voxelnet, bevfusion')
         n_trajs, n_iters = controls.shape[:2]
 
         # Initial state
@@ -113,18 +187,14 @@ class Evaluator:
         self.physics_engine.eval()
 
         # output folder to write evaluation results
-        self.output_folder = (f'./gen/eval/'
-                              f'{self.terrain_encoder.__class__.__name__}_'
-                              f'{self.physics_engine.__class__.__name__}')
-
-        # load dataset
-        _, val_ds = compile_data(lss_cfg=self.lss_config)
-        loader = DataLoader(val_ds, batch_size=self.batch_size, shuffle=False)
+        output_folder = (f'./gen/eval_{time()}/'
+                         f'{self.terrain_encoder.__class__.__name__}_'
+                         f'{self.physics_engine.__class__.__name__}')
 
         # create output folder
-        os.makedirs(self.output_folder, exist_ok=True)
+        os.makedirs(output_folder, exist_ok=True)
         # write losses to output csv
-        write_to_csv(f'{self.output_folder}/losses.csv', 'Batch i,H_g loss,H_t loss,XYZ loss\n')
+        write_to_csv(f'{output_folder}/losses.csv', 'Batch i,H_g loss,H_t loss,XYZ loss\n')
 
         H, W = self.lss_config['data_aug_conf']['H'], self.lss_config['data_aug_conf']['W']
         cams = ['cam_left', 'cam_front', 'cam_right', 'cam_rear']
@@ -133,13 +203,30 @@ class Evaluator:
         y_grid = self.world_config.y_grid[0].cpu()
 
         fig, axes = plt.subplots(3, 4, figsize=(20, 16))
-        for i, batch in enumerate(tqdm(loader)):
+        for i, batch in enumerate(tqdm(self.val_loader)):
             batch = [t.to(self.device) for t in batch]
             # get a sample from the dataset
-            (imgs, rots, trans, intrins, post_rots, post_trans,
-             hm_geom, hm_terrain,
-             control_ts, controls,
-             traj_ts, xs, xds, qs, omegas, thetas) = batch
+            if self.terrain_encoder_model == 'lss':
+                (imgs, rots, trans, intrins, post_rots, post_trans,
+                 hm_geom, hm_terrain,
+                 control_ts, controls,
+                 traj_ts, xs, xds, qs, omegas, thetas) = batch
+            elif self.terrain_encoder_model == 'voxelnet':
+                (points, hm_geom, hm_terrain,
+                 control_ts, controls,
+                 pose0,
+                 traj_ts, xs, xds, qs, omegas, thetas) = batch
+            elif self.terrain_encoder_model == 'bevfusion':
+                (imgs, rots, trans, intrins, post_rots, post_trans,
+                 hm_geom, hm_terrain,
+                 control_ts, controls,
+                 pose0,
+                 traj_ts, xs, xds, qs, omegas, thetas,
+                 points) = batch
+            else:
+                raise ValueError(f'Unknown terrain encoder model: {self.terrain_encoder_model}. Supported models: '
+                                 f'lss, voxelnet, bevfusion')
+            states_gt = [xs, xds, qs, omegas, thetas]
 
             # terrain prediction
             terrain = self.predict_terrain(batch)
@@ -155,41 +242,37 @@ class Evaluator:
                                        gamma=1.0)
 
             # write losses to csv
-            append_to_csv(f'{self.output_folder}/losses.csv',
+            append_to_csv(f'{output_folder}/losses.csv',
                           f'{i:04d}, {loss_geom.item()},{loss_terrain.item()},{loss_xyz.item()}\n')
 
             # get height map points
             hm_points = torch.stack([x_grid, y_grid, terrain['terrain'][0].squeeze().cpu()], dim=-1)
             hm_points = hm_points.view(-1, 3).T
 
-            batch = [t.to('cpu') for t in batch]
-            (imgs, rots, trans, intrins, post_rots, post_trans,
-             hm_geom, hm_terrain,
-             control_ts, controls,
-             traj_ts, xs, xds, qs, omegas, thetas) = batch
-            states_gt = [xs, xds, qs, omegas, thetas]
-
             # clear axis
             for ax in axes.flatten():
                 ax.clear()
             plt.suptitle(f'Terrain Loss: {loss_terrain.item():.3f}, Traj Loss: {loss_xyz.item():.3f}')
-            for imgi, img in enumerate(imgs[0]):
-                ax = axes[0, imgi]
 
-                cam_pts = ego_to_cam(hm_points, rots[0, imgi], trans[0, imgi], intrins[0, imgi])
-                mask = get_only_in_img_mask(cam_pts, H, W)
-                plot_pts = post_rots[0, imgi].matmul(cam_pts) + post_trans[0, imgi].unsqueeze(1)
-                showimg = denormalize_img(img)
+            if self.terrain_encoder_model in ['lss', 'bevfusion']:
+                # plot camera images with height map points
+                for imgi, img in enumerate(imgs[0]):
+                    ax = axes[0, imgi]
 
-                ax.imshow(showimg)
-                ax.scatter(plot_pts[0, mask], plot_pts[1, mask],
-                           c=hm_points[2, mask],
-                           s=2, alpha=0.8, cmap='jet', vmin=-1, vmax=1.)
-                ax.axis('off')
-                # camera name as text on image
-                ax.text(0.5, 0.9, cams[imgi].replace('_', ' '),
-                        horizontalalignment='center', verticalalignment='top',
-                        transform=ax.transAxes, fontsize=10)
+                    cam_pts = ego_to_cam(hm_points, rots[0, imgi], trans[0, imgi], intrins[0, imgi])
+                    mask = get_only_in_img_mask(cam_pts, H, W)
+                    plot_pts = post_rots[0, imgi].matmul(cam_pts) + post_trans[0, imgi].unsqueeze(1)
+                    showimg = denormalize_img(img)
+
+                    ax.imshow(showimg)
+                    ax.scatter(plot_pts[0, mask], plot_pts[1, mask],
+                               c=hm_points[2, mask],
+                               s=2, alpha=0.8, cmap='jet', vmin=-1, vmax=1.)
+                    ax.axis('off')
+                    # camera name as text on image
+                    ax.text(0.5, 0.9, cams[imgi].replace('_', ' '),
+                            horizontalalignment='center', verticalalignment='top',
+                            transform=ax.transAxes, fontsize=10)
 
             # plot geom heightmap
             axes[1, 0].set_title('Geom Height')
@@ -254,7 +337,7 @@ class Evaluator:
             if vis:
                 plt.pause(0.01)
                 plt.draw()
-            plt.savefig(f'{self.output_folder}/{i:04d}.png')
+            plt.savefig(f'{output_folder}/{i:04d}.png')
         plt.close(fig)
 
 
@@ -262,6 +345,7 @@ def main():
     args = arg_parser()
     print(args)
     evaluator = Evaluator(batch_size=args.batch_size,
+                          terrain_encoder_model=args.terrain_encoder_model,
                           pretrained_terrain_encoder_path=args.pretrained_terrain_encoder_path)
     evaluator.run(vis=args.vis)
 

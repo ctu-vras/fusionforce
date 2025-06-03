@@ -9,7 +9,8 @@ VIS=True
 
 WEIGHTS=$HOME/workspaces/ros2/traversability_ws/src/fusionforce/fusionforce/config/weights/${TERRAIN_ENCODER}/val.pth
 echo "Evaluating terrain encoder ${TERRAIN_ENCODER}..."
-python eval.py --pretrained_terrain_encoder_path ${WEIGHTS} \
+python eval.py --terrain_encoder_model ${TERRAIN_ENCODER} \
+               --pretrained_terrain_encoder_path ${WEIGHTS} \
                --batch_size ${BATCH_SIZE} \
                --vis ${VIS}
 echo "Done evaluating."

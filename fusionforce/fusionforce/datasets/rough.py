@@ -553,14 +553,14 @@ class PointsROUGH(ROUGH):
         points = torch.as_tensor(position(self.get_cloud(i, apply_augs=True))).T
         control_ts, controls = self.get_controls(i)
         traj_ts, states = self.get_states_traj(i)
-        xs, xds, Rs, omegas = states
+        xs, xds, qs, omegas, thetas = states
         hm_geom = self.get_geom_height_map(i)
         hm_terrain = self.get_terrain_height_map(i)
         pose0 = torch.as_tensor(self.get_initial_pose_on_heightmap(i), dtype=torch.float32)
         return (points, hm_geom, hm_terrain,
                 control_ts, controls,
                 pose0,
-                traj_ts, xs, xds, Rs, omegas)
+                traj_ts, xs, xds, qs, omegas, thetas)
 
 
 class FusionROUGH(PointsROUGH):
@@ -572,7 +572,7 @@ class FusionROUGH(PointsROUGH):
         points = torch.as_tensor(position(self.get_cloud(i, apply_augs=True))).T
         control_ts, controls = self.get_controls(i)
         traj_ts, states = self.get_states_traj(i)
-        xs, xds, Rs, omegas = states
+        xs, xds, qs, omegas, thetas = states
         hm_geom = self.get_geom_height_map(i)
         hm_terrain = self.get_terrain_height_map(i)
         pose0 = torch.as_tensor(self.get_initial_pose_on_heightmap(i), dtype=torch.float32)
@@ -580,7 +580,7 @@ class FusionROUGH(PointsROUGH):
                 hm_geom, hm_terrain,
                 control_ts, controls,
                 pose0,
-                traj_ts, xs, xds, Rs, omegas,
+                traj_ts, xs, xds, qs, omegas, thetas,
                 points)
 
 
