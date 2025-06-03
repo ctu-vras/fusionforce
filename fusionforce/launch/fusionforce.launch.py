@@ -28,8 +28,8 @@ def generate_launch_description():
             actions=[
                 Node(
                     package='fusionforce',
-                    executable='monoforce_node',
-                    name='monoforce_node',
+                    executable='fusionforce_node',
+                    name='fusionforce_node',
                     output='screen',
                     parameters=[{
                         'img_topics': PythonExpression([
