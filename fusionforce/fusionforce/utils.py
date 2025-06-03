@@ -124,7 +124,7 @@ def load_calib(calib_path):
 
 def compile_data(val_fraction=0.1, small_data=False, vis=False, Data=None, lss_cfg=None):
     from torch.utils.data import ConcatDataset, Subset
-    from monoforce.datasets import ROUGH, rough_seq_paths
+    from fusionforce.datasets import ROUGH, rough_seq_paths
     """
     Compile datasets for LSS model training
 
@@ -191,13 +191,13 @@ def compile_data(val_fraction=0.1, small_data=False, vis=False, Data=None, lss_c
 
 def explore_data(ds, sample_range='random', save=False):
     from tqdm import tqdm
-    from monoforce.models.terrain_encoder.lss import LiftSplatShoot
-    from monoforce.models.terrain_encoder.utils import ego_to_cam, get_only_in_img_mask, denormalize_img
+    from fusionforce.models.terrain_encoder.lss import LiftSplatShoot
+    from fusionforce.models.terrain_encoder.utils import ego_to_cam, get_only_in_img_mask, denormalize_img
 
     lss_cfg = ds.lss_cfg
     d_max = lss_cfg['grid_conf']['xbound'][1]
     grid_res = lss_cfg['grid_conf']['xbound'][2]
-    model = LiftSplatShoot(lss_cfg['grid_conf'], lss_cfg['data_aug_conf'], outC=1)
+    model = LiftSplatShoot(lss_cfg['grid_conf'], lss_cfg['data_aug_conf'], out_channels=1)
 
     H, W = ds.lss_cfg['data_aug_conf']['H'], ds.lss_cfg['data_aug_conf']['W']
     cams = ds.camera_names

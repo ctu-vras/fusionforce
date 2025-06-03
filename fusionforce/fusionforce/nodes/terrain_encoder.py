@@ -11,7 +11,7 @@ from PIL import Image as PILImage
 import rclpy.time
 from fusionforce.utils import read_yaml
 from fusionforce.models.terrain_encoder.lss import LiftSplatShoot
-from fusionforce.models.terrain_encoder.utils import sample_augmentation, img_transform, normalize_img
+from fusionforce.models.terrain_encoder.utils import get_image_augmentations, img_transform, normalize_img
 from fusionforce.utils import set_device
 
 import rclpy
@@ -185,7 +185,7 @@ class TerrainEncoder(Node):
         # preprocessing parameters (resize, crop)
         lss_cfg = copy(self.lss_cfg)
         lss_cfg['data_aug_conf']['H'], lss_cfg['data_aug_conf']['W'] = img.shape[:2]
-        resize, resize_dims, crop, flip, rotate = sample_augmentation(lss_cfg, is_train=False)
+        resize, resize_dims, crop, flip, rotate = get_image_augmentations(lss_cfg, is_train=False)
         img, post_rot2, post_tran2 = img_transform(PILImage.fromarray(img), post_rot, post_tran,
                                                    resize=resize,
                                                    resize_dims=resize_dims,

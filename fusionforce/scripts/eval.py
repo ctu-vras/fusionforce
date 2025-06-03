@@ -86,7 +86,6 @@ class Evaluator:
          hm_geom, hm_terrain,
          control_ts, controls,
          traj_ts, xs, xds, qs, omegas, thetas) = batch
-        height, friction = terrain['terrain'], terrain['friction']
         n_trajs, n_iters = controls.shape[:2]
 
         # Initial state
@@ -97,7 +96,7 @@ class Evaluator:
         thetas0 = thetas[:, 0].contiguous()
         state0 = PhysicsState(x0, xd0, q0, omega0, thetas0, batch_size=x0.shape[0])
 
-        self.world_config.z_grid = height.squeeze(1)
+        self.world_config.z_grid = terrain['terrain'].squeeze(1)
         states_pred = deque(maxlen=n_iters)
         state = state0
         for i in range(n_iters):
@@ -206,11 +205,6 @@ class Evaluator:
             axes[1, 2].set_title('Terrain Height')
             axes[1, 2].imshow(terrain['terrain'][0].squeeze().cpu(), origin='lower', cmap='jet', vmin=-1., vmax=1.)
             axes[1, 2].axis('off')
-
-            # plot friction map
-            axes[1, 3].set_title('Uncertainty (log(σ²))')
-            axes[1, 3].imshow(terrain['logvar'][0].squeeze().cpu(), origin='lower', cmap='jet', vmin=0., vmax=0.1)
-            axes[1, 3].axis('off')
 
             # plot control inputs
             axes[2, 0].plot(control_ts[0], controls[0, :, 0], 'g', label='v_(t)')

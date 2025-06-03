@@ -16,7 +16,8 @@ from eval import Evaluator
 from fusionforce.models.terrain_encoder.utils import denormalize_img, ego_to_cam, get_only_in_img_mask
 from fusionforce.models.physics_engine.utils.environment import make_x_y_grids
 from fusionforce.utils import str2bool, compile_data
-from fusionforce.losses import terrain_loss, trajectory_loss, terrain_heteroscedastic_loss
+from fusionforce.losses import terrain_loss, trajectory_loss
+from fusionforce.datasets.rough import ROUGH, PointsROUGH, FusionROUGH
 
 
 def arg_parser():
@@ -27,11 +28,10 @@ def arg_parser():
     parser.add_argument('--pretrained_terrain_encoder_path', type=str, default=None,
                         help='Path to pretrained terrain encoder')
     parser.add_argument('--debug', type=str2bool, default=True, help='Debug mode: use small datasets')
-    parser.add_argument('--vis', type=str2bool, default=False, help='Visualize training samples')
+    parser.add_argument('--vis', type=str2bool, default=True, help='Visualize training samples')
     parser.add_argument('--geom_weight', type=float, default=1.0, help='Weight for geometry loss')
     parser.add_argument('--terrain_weight', type=float, default=1.0, help='Weight for terrain heightmap loss')
     parser.add_argument('--phys_weight', type=float, default=0.0, help='Weight for physics loss')
-    parser.add_argument('--logvar_weight', type=float, default=1.0, help='Weight for log variance loss')
 
     return parser.parse_args()
 
@@ -46,7 +46,6 @@ class Trainer(Evaluator):
                  geom_weight: float = 1.0,
                  terrain_weight: float = 1.0,
                  phys_weight: float = 1.0,
-                 logvar_weight: float = 1.0,
                  debug: bool = False,
                  vis: bool = False):
         super(Trainer, self).__init__(batch_size=batch_size,
@@ -61,7 +60,11 @@ class Trainer(Evaluator):
         self.geom_weight = geom_weight
         self.terrain_weight = terrain_weight
         self.phys_weight = phys_weight
-        self.logvar_weight = logvar_weight
+
+        # for terrain regularization: penalize Laplacian of the terrain (2nd derivative of elevation)
+        self.laplace_kernel = torch.tensor([[1, 1, 1],
+                                            [1, -8, 1],
+                                            [1, 1, 1]], dtype=torch.float32).unsqueeze(0).unsqueeze(0).to(self.device)
 
         # define optimizer
         self.optimizer = torch.optim.Adam(self.terrain_encoder.parameters(), lr=lr, weight_decay=weight_decay)
@@ -79,10 +82,14 @@ class Trainer(Evaluator):
 
     def create_dataloaders(self, debug=False, vis=False):
         # create dataset for LSS model training
-        train_ds, val_ds = compile_data(small_data=debug, vis=vis)
+        train_ds, val_ds = compile_data(small_data=debug, vis=vis, Data=ROUGH)
         train_loader = DataLoader(train_ds, batch_size=self.batch_size, shuffle=True, drop_last=True)
         val_loader = DataLoader(val_ds, batch_size=self.batch_size, shuffle=False, drop_last=True)
         return train_loader, val_loader
+
+    def laplacian_loss(self, pred):
+        lap = torch.nn.functional.conv2d(pred, self.laplace_kernel, padding=1)
+        return torch.mean(torch.abs(lap))
 
     def compute_losses(self, batch):
         # unpack batch
@@ -97,20 +104,16 @@ class Trainer(Evaluator):
         # geometry loss: difference between predicted and ground truth height maps
         if self.geom_weight > 0:
             loss_geom = terrain_loss(terrain['geom'], hm_geom[:, 0:1], hm_geom[:, 1:2])
+            loss_geom += 0.02 * self.laplacian_loss(terrain['geom'])
         else:
             loss_geom = torch.tensor(0.0, device=self.device)
 
         # rigid / terrain height map loss
         if self.terrain_weight > 0:
             loss_terrain = terrain_loss(terrain['terrain'], hm_terrain[:, 0:1], hm_terrain[:, 1:2])
+            loss_terrain += 0.02 * self.laplacian_loss(terrain['terrain'])
         else:
             loss_terrain = torch.tensor(0.0, device=self.device)
-
-        if self.logvar_weight > 0:
-            # compute logvar loss
-            loss_logvar = terrain_heteroscedastic_loss(mu=terrain['terrain'], logvar=terrain['logvar'], y=hm_terrain[:, 0:1], weights=hm_terrain[:, 1:2])
-        else:
-            loss_logvar = torch.tensor(0.0, device=self.device)
 
         # physics loss: difference between predicted and ground truth states
         if self.phys_weight > 0:
@@ -122,7 +125,12 @@ class Trainer(Evaluator):
         else:
             loss_phys = torch.tensor(0.0, device=self.device)
 
-        return loss_geom, loss_terrain, loss_phys, loss_logvar
+        losses = {
+            'geom': loss_geom,
+            'terrain': loss_terrain,
+            'phys': loss_phys
+        }
+        return losses
 
     def epoch(self, train=True):
         loader = self.train_loader if train else self.val_loader
@@ -134,17 +142,18 @@ class Trainer(Evaluator):
             self.terrain_encoder.eval()
 
         max_grad_norm = 1.0
-        epoch_losses = {'geom': 0.0, 'terrain': 0.0, 'phys': 0.0, 'logvar': 0.0, 'total': 0.0}
+        epoch_losses = {'total': 0.0}
         for batch in tqdm(loader, total=len(loader)):
             if train:
                 self.optimizer.zero_grad()
 
             batch = [torch.as_tensor(b, dtype=torch.float32, device=self.device) for b in batch]
-            loss_geom, loss_terrain, loss_phys, loss_logvar = self.compute_losses(batch)
-            loss = (self.geom_weight * loss_geom + self.terrain_weight * loss_terrain +
-                    self.phys_weight * loss_phys + self.logvar_weight * loss_logvar)
+            losses = self.compute_losses(batch)
+            loss = (self.geom_weight * losses['geom'] +
+                    self.terrain_weight * losses['terrain'] +
+                    self.phys_weight * losses['phys'])
 
-            if torch.isnan(loss).item():
+            if torch.isnan(loss):
                 torch.save(self.terrain_encoder.state_dict(), os.path.join(self.log_dir, 'train.pth'))
                 raise ValueError('Loss is NaN')
 
@@ -153,18 +162,15 @@ class Trainer(Evaluator):
                 torch.nn.utils.clip_grad_norm_(self.terrain_encoder.parameters(), max_norm=max_grad_norm)
                 self.optimizer.step()
 
-            epoch_losses['geom'] += loss_geom.item()
-            epoch_losses['terrain'] += loss_terrain.item()
-            epoch_losses['phys'] += loss_phys.item()
-            epoch_losses['logvar'] += loss_logvar.item()
-            epoch_losses['total'] += (loss_geom + loss_terrain + loss_phys + loss_logvar).item()
+            for k, v in losses.items():
+                if k not in epoch_losses:
+                    epoch_losses[k] = 0.0
+                epoch_losses[k] += v.item()
+            epoch_losses['total'] += (losses['geom'] + losses['terrain'] + losses['phys']).item()
 
             counter += 1
-            self.writer.add_scalar(f"{'train' if train else 'val'}/iter_loss_geom", loss_geom.item(), counter)
-            self.writer.add_scalar(f"{'train' if train else 'val'}/iter_loss_terrain", loss_terrain.item(), counter)
-            self.writer.add_scalar(f"{'train' if train else 'val'}/iter_loss_phys", loss_phys.item(), counter)
-            self.writer.add_scalar(f"{'train' if train else 'val'}/iter_loss_logvar", loss_logvar.item(), counter)
-            self.writer.add_scalar(f"{'train' if train else 'val'}/iter_loss_total", loss.item(), counter)
+            for k, v in losses.items():
+                self.writer.add_scalar(f"{'train' if train else 'val'}/iter_loss_{k}", v.item(), counter)
 
         if len(loader) > 0:
             for k, v in epoch_losses.items():
@@ -229,7 +235,6 @@ class Trainer(Evaluator):
         geom_pred = terrain['geom'][0, 0].cpu()
         diff_pred = terrain['diff'][0, 0].cpu()
         terrain_pred = terrain['terrain'][0, 0].cpu()
-        logvar_pred = terrain['logvar'][0, 0].cpu()
         xs_pred = states_pred.x[:, 0].cpu()
         xs_pred_grid = (xs_pred[:, :2] + self.world_config.max_coord) / self.grid_res
         xs_grid = (xs[:, :2] + self.world_config.max_coord) / self.grid_res
@@ -279,11 +284,6 @@ class Trainer(Evaluator):
         axes[1, 1].scatter(xs_pred_grid[:, 0], xs_pred_grid[:, 1], c='r', s=1)
         axes[1, 1].scatter(xs_grid[:, 0], xs_grid[:, 1], c='k', s=1)
 
-        axes[1, 2].set_title('Uncertainity (log(σ²))')
-        axes[1, 2].imshow(logvar_pred, origin='lower', cmap='jet')#, vmin=0.0), vmax=1.0)
-        axes[1, 2].scatter(xs_pred_grid[:, 0], xs_pred_grid[:, 1], c='r', s=1)
-        axes[1, 2].scatter(xs_grid[:, 0], xs_grid[:, 1], c='k', s=1)
-
         axes[1, 3].set_title('Trajectories XY')
         axes[1, 3].plot(xs[:, 0], xs[:, 1], c='k', label='GT')
         axes[1, 3].plot(xs_pred[:, 0], xs_pred[:, 1], c='r', label='Pred')
@@ -332,7 +332,6 @@ def main():
                       geom_weight=args.geom_weight,
                       terrain_weight=args.terrain_weight,
                       phys_weight=args.phys_weight,
-                      logvar_weight=args.logvar_weight,
                       debug=args.debug,
                       vis=args.vis)
     trainer.train()

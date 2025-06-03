@@ -1,9 +1,18 @@
-import os
 import torch
 from torch import nn
 from efficientnet_pytorch import EfficientNet
 from torchvision.models.resnet import resnet18
 from .utils import gen_dx_bx, cumsum_trick, QuickCumsum
+
+
+class ScaledTanh(nn.Module):
+    def __init__(self, min_val=-1.0, max_val=1.0):
+        super(ScaledTanh, self).__init__()
+        self.min_val = min_val
+        self.max_val = max_val
+
+    def forward(self, x):
+        return self.min_val + (self.max_val - self.min_val) * (torch.tanh(x) + 1) / 2
 
 
 class Up(nn.Module):
@@ -80,23 +89,12 @@ class CamEncode(nn.Module):
 
         return x
 
-
-class ScaledTanh(nn.Module):
-    def __init__(self, min_val=-1., max_val=1.):
-        super(ScaledTanh, self).__init__()
-        self.min_val = min_val
-        self.max_val = max_val
-
-    def forward(self, x):
-        return self.min_val + (self.max_val - self.min_val) * (torch.tanh(x) + 1) / 2
-
-
 class BevEncode(nn.Module):
-    def __init__(self, inC, outC):
+    def __init__(self, in_channels, out_channels):
         super(BevEncode, self).__init__()
 
         trunk = resnet18(zero_init_residual=True)
-        self.conv1 = nn.Conv2d(inC, 64, kernel_size=7, stride=2, padding=3, bias=False)
+        self.conv1 = nn.Conv2d(in_channels, 64, kernel_size=7, stride=2, padding=3, bias=False)
         self.bn1 = trunk.bn1
         self.relu = trunk.relu
 
@@ -110,7 +108,7 @@ class BevEncode(nn.Module):
             nn.Conv2d(256, 128, kernel_size=3, padding=1, bias=False),
             nn.BatchNorm2d(128),
             nn.GELU(),
-            nn.Conv2d(128, outC, kernel_size=1, padding=0),
+            nn.Conv2d(128, out_channels, kernel_size=1, padding=0),
             ScaledTanh(-1, 1)
         )
         self.up_diff = nn.Sequential(
@@ -118,25 +116,25 @@ class BevEncode(nn.Module):
             nn.Conv2d(256, 128, kernel_size=3, padding=1, bias=False),
             nn.BatchNorm2d(128),
             nn.GELU(),
-            nn.Conv2d(128, outC, kernel_size=1, padding=0),
+            nn.Conv2d(128, out_channels, kernel_size=1, padding=0),
             nn.ReLU()
         )
-        self.up_friction = nn.Sequential(
-            nn.Upsample(scale_factor=2, mode='bilinear', align_corners=True),
-            nn.Conv2d(256, 128, kernel_size=3, padding=1, bias=False),
-            nn.BatchNorm2d(128),
-            nn.GELU(),
-            nn.Conv2d(128, outC, kernel_size=1, padding=0),
-            nn.ReLU()
-        )
-        self.up_var = nn.Sequential(
-            nn.Upsample(scale_factor=2, mode='bilinear', align_corners=True),
-            nn.Conv2d(256, 128, kernel_size=3, padding=1, bias=False),
-            nn.BatchNorm2d(128),
-            nn.GELU(),
-            nn.Conv2d(128, outC, kernel_size=1, padding=0),
-            nn.Softplus()
-        )  # variance, σ²
+        # self.up_friction = nn.Sequential(
+        #     nn.Upsample(scale_factor=2, mode='bilinear', align_corners=True),
+        #     nn.Conv2d(256, 128, kernel_size=3, padding=1, bias=False),
+        #     nn.BatchNorm2d(128),
+        #     nn.GELU(),
+        #     nn.Conv2d(128, out_channels, kernel_size=1, padding=0),
+        #     nn.ReLU()
+        # )
+        # self.up_var = nn.Sequential(
+        #     nn.Upsample(scale_factor=2, mode='bilinear', align_corners=True),
+        #     nn.Conv2d(256, 128, kernel_size=3, padding=1, bias=False),
+        #     nn.BatchNorm2d(128),
+        #     nn.GELU(),
+        #     nn.Conv2d(128, out_channels, kernel_size=1, padding=0),
+        #     nn.Softplus()
+        # )  # variance, σ²
 
     def backbone(self, x):
         x = self.conv1(x)
@@ -151,24 +149,29 @@ class BevEncode(nn.Module):
 
         return x
 
-    def forward(self, x):
-        x = self.backbone(x)
+    def heads(self, x):
         x_geom = self.up_geom(x)
         x_diff = self.up_diff(x)
-        x_friction = self.up_friction(x)
         x_terrain = x_geom - x_diff
-        x_logvar = torch.log(self.up_var(x))
+        # x_friction = self.up_friction(x)
+        # x_logvar = torch.log(self.up_var(x))
         out = {
             'geom': x_geom,
             'terrain': x_terrain,
             'diff': x_diff,
-            'friction': x_friction,
-            'logvar': x_logvar
+            # 'friction': x_friction,
+            # 'logvar': x_logvar
         }
         return out
 
+    def forward(self, x):
+        x = self.backbone(x)
+        x = self.heads(x)
+        return x
+
+
 class LiftSplatShoot(nn.Module):
-    def __init__(self, grid_conf, data_aug_conf, outC=1):
+    def __init__(self, grid_conf, data_aug_conf, out_channels=1):
         super(LiftSplatShoot, self).__init__()
         self.grid_conf = grid_conf
         self.data_aug_conf = data_aug_conf
@@ -186,7 +189,7 @@ class LiftSplatShoot(nn.Module):
         self.frustum = self.create_frustum()
         self.D, _, _, _ = self.frustum.shape
         self.camencode = CamEncode(self.D, self.camC)
-        self.bevencode = BevEncode(inC=self.camC, outC=outC)
+        self.bevencode = BevEncode(in_channels=self.camC, out_channels=out_channels)
 
         # toggle using QuickCumsum vs. autograd
         self.use_quickcumsum = True
