@@ -155,27 +155,7 @@ class FusionForce(TerrainEncoder):
 
     @torch.inference_mode()
     def proc(self, *msgs):
-        n = len(msgs)
-        assert n % 2 == 0
-        for i in range(n // 2):
-            assert isinstance(msgs[i], CompressedImage), 'First %d messages must be Image' % (n // 2)
-            assert isinstance(msgs[i + n // 2], CameraInfo), 'Last %d messages must be CameraInfo' % (n // 2)
-            assert msgs[i].header.frame_id == msgs[i + n // 2].header.frame_id, \
-                'Image and CameraInfo messages must have the same frame_id'
-        # preprocessing
-        t0 = time()
-        img_msgs = msgs[:n // 2]
-        info_msgs = msgs[n // 2:]
-        inputs = self.get_lss_inputs(img_msgs, info_msgs)
-        inputs = [i.to(self.device) for i in inputs]
-        self._logger.debug(f'Preprocessing took {time() - t0:.3f} sec')
-        self._logger.debug(f'Preprocessed image shape {inputs[0].shape}')
-
-        # model inference
-        t1 = time()
-        terrain = self.terrain_encoder(*inputs)
-        self._logger.info(f'Terrain prediction took {time() - t1:.3f} sec')
-        self._logger.info(f'Predicted height map shape: {terrain['terrain'].shape}')
+        terrain = self.msgs_to_terrain(msgs)
 
         # publish terrain as a grid map
         stamp = msgs[0].header.stamp
