@@ -14,6 +14,7 @@ from fusionforce.models.terrain_encoder.bevfusion import BEVFusion
 from fusionforce.models.terrain_encoder.utils import get_image_augmentations, img_transform, normalize_img
 from fusionforce.utils import set_device
 from fusionforce.ros import terrain_to_gridmap_msg
+from fusionforce.transformations import transform_cloud
 
 import rclpy
 import rclpy.time
@@ -173,6 +174,11 @@ class TerrainEncoder(Node):
     def cloud_msg_to_input(self, msg):
         assert isinstance(msg, PointCloud2)
         points = pc2.read_points_numpy(msg, field_names=['x', 'y', 'z'], skip_nans=False)
+
+        # transform points to robot frame
+        Tr = self.get_transform(from_frame=msg.header.frame_id, to_frame=self.robot_frame,
+                                time=msg.header.stamp)
+        points = transform_cloud(points, Tr)
 
         # convert points to gravity-aligned frame
         robot_pose = self.get_transform(from_frame=self.robot_frame, to_frame=self.fixed_frame)
