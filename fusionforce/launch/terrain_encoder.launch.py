@@ -60,5 +60,5 @@ def generate_launch_description():
         robot_frame_arg,
         fixed_frame_arg,
         use_sim_time_arg,
-        TimerAction(period=1.0, actions=[node])
+        TimerAction(period=0.0, actions=[node])
     ])
