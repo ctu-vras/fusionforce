@@ -15,6 +15,7 @@ from fusionforce.models.terrain_encoder.lss import LiftSplatShoot
 from fusionforce.models.terrain_encoder.voxelnet import VoxelNet
 from fusionforce.models.terrain_encoder.bevfusion import BEVFusion
 from fusionforce.models.terrain_encoder.utils import img_transform, normalize_img, get_image_augmentations
+from fusionforce.transformations import transform_cloud
 
 import rospy
 import rospkg
@@ -282,6 +283,10 @@ class TerrainEncoder:
     def cloud_msg_to_input(self, msg):
         assert isinstance(msg, PointCloud2)
         points = cloud_msg_to_numpy(msg)
+
+        # transform points to robot frame
+        Tr = self.get_transform(from_frame=msg.header.frame_id, to_frame=self.robot_frame)
+        points = transform_cloud(points, Tr)
 
         # convert points to gravity-aligned frame
         robot_pose = self.get_transform(from_frame=self.robot_frame, to_frame=self.fixed_frame)
