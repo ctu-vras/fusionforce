@@ -5,7 +5,6 @@ sys.path.append('../')
 import os
 import torch
 import numpy as np
-from torch.utils.data import DataLoader
 from tqdm import tqdm
 from torch.utils.tensorboard import SummaryWriter
 from datetime import datetime
@@ -24,7 +23,7 @@ def arg_parser():
     parser.add_argument('--batch_size', type=int, default=4, help='Batch size')
     parser.add_argument('--n_epochs', type=int, default=1000, help='Number of epochs')
     parser.add_argument('--lr', type=float, default=1e-3, help='Learning rate')
-    parser.add_argument('--terrain_encoder_model', type=str, default='bevfusion',
+    parser.add_argument('--terrain_encoder_model', type=str, default='voxelnet',
                         choices=['lss', 'voxelnet', 'bevfusion'], help='Which encoder model to train')
     parser.add_argument('--pretrained_terrain_encoder_path', type=str, default=None,
                         help='Path to pretrained terrain encoder')
@@ -96,13 +95,11 @@ class Trainer(Evaluator):
         elif self.terrain_encoder_model == 'voxelnet':
             (points, hm_geom, hm_terrain,
              control_ts, controls,
-             pose0,
              traj_ts, xs, xds, qs, omegas, thetas) = batch
         elif self.terrain_encoder_model == 'bevfusion':
             (imgs, rots, trans, intrins, post_rots, post_trans,
              hm_geom, hm_terrain,
              control_ts, controls,
-             pose0,
              traj_ts, xs, xds, qs, omegas, thetas,
              points) = batch
         else:
@@ -246,13 +243,11 @@ class Trainer(Evaluator):
         elif self.terrain_encoder_model == 'voxelnet':
             (points, hm_geom, hm_terrain,
              control_ts, controls,
-             pose0,
              traj_ts, xs, xds, qs, omegas, thetas) = sample
         elif self.terrain_encoder_model == 'bevfusion':
             (imgs, rots, trans, intrins, post_rots, post_trans,
              hm_geom, hm_terrain,
              control_ts, controls,
-             pose0,
              traj_ts, xs, xds, qs, omegas, thetas,
              points) = sample
         else:

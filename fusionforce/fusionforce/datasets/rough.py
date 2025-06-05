@@ -556,10 +556,8 @@ class PointsROUGH(ROUGH):
         xs, xds, qs, omegas, thetas = states
         hm_geom = self.get_geom_height_map(i)
         hm_terrain = self.get_terrain_height_map(i)
-        pose0 = torch.as_tensor(self.get_initial_pose_on_heightmap(i), dtype=torch.float32)
         return (points, hm_geom, hm_terrain,
                 control_ts, controls,
-                pose0,
                 traj_ts, xs, xds, qs, omegas, thetas)
 
 
@@ -575,11 +573,9 @@ class FusionROUGH(PointsROUGH):
         xs, xds, qs, omegas, thetas = states
         hm_geom = self.get_geom_height_map(i)
         hm_terrain = self.get_terrain_height_map(i)
-        pose0 = torch.as_tensor(self.get_initial_pose_on_heightmap(i), dtype=torch.float32)
         return (imgs, rots, trans, intrins, post_rots, post_trans,
                 hm_geom, hm_terrain,
                 control_ts, controls,
-                pose0,
                 traj_ts, xs, xds, qs, omegas, thetas,
                 points)
 

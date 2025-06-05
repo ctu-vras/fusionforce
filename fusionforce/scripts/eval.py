@@ -117,14 +117,12 @@ class Evaluator:
         elif self.terrain_encoder_model == 'voxelnet':
             (points, hm_geom, hm_terrain,
              control_ts, controls,
-             pose0,
              traj_ts, xs, xds, qs, omegas, thetas) = batch
             terrain = self.terrain_encoder(points)
         elif self.terrain_encoder_model == 'bevfusion':
             (imgs, rots, trans, intrins, post_rots, post_trans,
              hm_geom, hm_terrain,
              control_ts, controls,
-             pose0,
              traj_ts, xs, xds, qs, omegas, thetas,
              points) = batch
             img_inputs = (imgs, rots, trans, intrins, post_rots, post_trans)
@@ -148,13 +146,11 @@ class Evaluator:
         elif self.terrain_encoder_model == 'voxelnet':
             (points, hm_geom, hm_terrain,
              control_ts, controls,
-             pose0,
              traj_ts, xs, xds, qs, omegas, thetas) = batch
         elif self.terrain_encoder_model == 'bevfusion':
             (imgs, rots, trans, intrins, post_rots, post_trans,
              hm_geom, hm_terrain,
              control_ts, controls,
-             pose0,
              traj_ts, xs, xds, qs, omegas, thetas,
              points) = batch
         else:
@@ -214,13 +210,11 @@ class Evaluator:
             elif self.terrain_encoder_model == 'voxelnet':
                 (points, hm_geom, hm_terrain,
                  control_ts, controls,
-                 pose0,
                  traj_ts, xs, xds, qs, omegas, thetas) = batch
             elif self.terrain_encoder_model == 'bevfusion':
                 (imgs, rots, trans, intrins, post_rots, post_trans,
                  hm_geom, hm_terrain,
                  control_ts, controls,
-                 pose0,
                  traj_ts, xs, xds, qs, omegas, thetas,
                  points) = batch
             else:
