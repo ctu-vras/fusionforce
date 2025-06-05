@@ -47,8 +47,9 @@ class Evaluator:
                  terrain_encoder_model: str = 'lss',
                  pretrained_terrain_encoder_path=None,
                  grid_res: float = 0.1,
-                 max_coord: float = 6.4):
-        self.device = 'cpu'
+                 max_coord: float = 6.4,
+                 device: str = 'cpu'):
+        self.device = torch.device(device)
         self.batch_size = batch_size
 
         # load configs

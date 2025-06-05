@@ -51,7 +51,8 @@ class Trainer(Evaluator):
                  vis: bool = False):
         super(Trainer, self).__init__(batch_size=batch_size,
                                       terrain_encoder_model=terrain_encoder_model,
-                                      pretrained_terrain_encoder_path=pretrained_terrain_encoder_path)
+                                      pretrained_terrain_encoder_path=pretrained_terrain_encoder_path,
+                                      device='cuda' if torch.cuda.is_available() else 'cpu')
         self.n_epochs = n_epochs
         self.min_val_loss = np.inf
         self.min_train_loss = np.inf

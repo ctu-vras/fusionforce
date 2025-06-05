@@ -2,13 +2,11 @@
 
 import os
 from copy import copy
-from time import time
 import numpy as np
 import torch
 from scipy.spatial.transform import Rotation
 from PIL import Image as PILImage
 
-import rclpy.time
 from fusionforce.utils import read_yaml
 from fusionforce.models.terrain_encoder.lss import LiftSplatShoot
 from fusionforce.models.terrain_encoder.voxelnet import VoxelNet
@@ -18,6 +16,7 @@ from fusionforce.utils import set_device
 from fusionforce.ros import terrain_to_gridmap_msg
 
 import rclpy
+import rclpy.time
 from rclpy.executors import ExternalShutdownException
 from rclpy.impl.logging_severity import LoggingSeverity
 from rclpy.node import Node
