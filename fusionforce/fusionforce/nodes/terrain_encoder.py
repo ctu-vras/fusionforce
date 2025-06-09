@@ -159,6 +159,7 @@ class TerrainEncoder(Node):
 
     def cam_msgs_to_input(self, msgs):
         n = len(msgs)
+        self._logger.debug('Received %d messages' % n)
         assert n % 2 == 0
         for i in range(n // 2):
             assert isinstance(msgs[i], CompressedImage), 'First %d messages must be CompressedImage' % (n // 2)

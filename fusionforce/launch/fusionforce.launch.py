@@ -28,7 +28,7 @@ def generate_launch_description():
         'fixed_frame', default_value='odom', description='Fixed world frame id'
     )
     use_sim_time_arg = DeclareLaunchArgument(
-        'use_sim_time', default_value='true', description='Use simulation time or not'
+        'use_sim_time', default_value='false', description='Use simulation time or not'
     )
 
     # Define the Node with parsed topic strings using PythonExpression
