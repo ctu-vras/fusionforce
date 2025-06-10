@@ -40,18 +40,19 @@ class TerrainEncoder(Node):
         super().__init__('terrain_encoder')
         self.declare_parameter('device', 'cuda' if torch.cuda.is_available() else 'cpu')
         self.declare_parameter('model', 'lss')  # options: 'lss', 'voxelnet', 'bevfusion'
+        self.declare_parameter('lss_cfg_path', os.path.join(fusionforce_path, 'config/lss_cfg.yaml'))
         self.declare_parameter('robot_frame', 'base_link')
         self.declare_parameter('fixed_frame', 'odom')
         self.declare_parameter('img_topics', ['/camera_front/image_color/compressed'])
         self.declare_parameter('camera_info_topics', ['/camera_front/image_color/camera_info'])
         self.declare_parameter('cloud_topic', '/points')
         self.declare_parameter('max_msgs_delay', 0.1)
-        self.declare_parameter('max_age', 0.2)
+        self.declare_parameter('max_age', 0.5)
 
         self.device = set_device(self.get_parameter('device').value)
         self._logger.set_level(LoggingSeverity.DEBUG)
 
-        self.lss_cfg = read_yaml(os.path.join(fusionforce_path, 'config/lss_cfg.yaml'))
+        self.lss_cfg = read_yaml(self.get_parameter('lss_cfg_path').get_parameter_value().string_value)
         self.model = self.get_parameter('model').get_parameter_value().string_value
         self.terrain_encoder = self.load_terrain_encoder(model=self.model)
 

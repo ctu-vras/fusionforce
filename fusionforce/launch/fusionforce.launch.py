@@ -1,8 +1,11 @@
+import os
+from ament_index_python import get_package_share_directory
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, TimerAction
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 from launch.substitutions import PythonExpression
+
 
 def generate_launch_description():
     # Declare launch arguments
@@ -20,6 +23,11 @@ def generate_launch_description():
                                             description='Point cloud topic to use for terrain encoding')
     model_arg = DeclareLaunchArgument(
         'model', default_value='voxelnet', description='Model type to use for terrain encoding'
+    )
+    lss_cfg_arg = DeclareLaunchArgument(
+        'lss_cfg_path',
+        default_value=os.path.join(get_package_share_directory('fusionforce'), 'config/lss_cfg.yaml'),
+        description='Path to the LSS configuration file'
     )
     robot_frame_arg = DeclareLaunchArgument(
         'robot_frame', default_value='base_link', description='Robot base frame id'
@@ -46,6 +54,7 @@ def generate_launch_description():
             ]),
             'cloud_topic': LaunchConfiguration('cloud_topic'),
             'model': LaunchConfiguration('model'),
+            'lss_cfg_path': LaunchConfiguration('lss_cfg_path'),
             'robot_frame': LaunchConfiguration('robot_frame'),
             'fixed_frame': LaunchConfiguration('fixed_frame'),
             'use_sim_time': LaunchConfiguration('use_sim_time')
@@ -57,6 +66,7 @@ def generate_launch_description():
         camera_info_topics_arg,
         cloud_topic_arg,
         model_arg,
+        lss_cfg_arg,
         robot_frame_arg,
         fixed_frame_arg,
         use_sim_time_arg,
