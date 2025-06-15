@@ -4,12 +4,12 @@ MODEL=bevfusion  # lss, voxelnet, bevfusion
 ROBOT=marv
 DEBUG=False
 VIS=False
-BSZ=4  # 24, 24, 4
+BSZ=12  # 24, 24, 12
 WEIGHTS=$HOME/workspaces/ros1/traversability_ws/src/fusionforce/fusionforce/config/weights/${MODEL}/val.pth
 
 ./train.py --bsz $BSZ --nepochs 1000 --lr 1e-4 \
            --debug $DEBUG --vis $VIS \
-           --geom_weight 1.0 --terrain_weight 2.0 --phys_weight 1.0 \
+           --geom_weight 1.0 --terrain_weight 5.0 --phys_weight 5.0 \
            --traj_sim_time 5.0 \
            --robot $ROBOT \
            --model $MODEL \
