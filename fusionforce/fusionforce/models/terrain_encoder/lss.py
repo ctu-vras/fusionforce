@@ -301,8 +301,14 @@ class LiftSplatShoot(nn.Module):
             return self
         print(f'Loading pretrained {self.__class__.__name__} model from', modelf)
         # https://discuss.pytorch.org/t/how-to-load-part-of-pre-trained-model/1113/3
+        # model dict
         model_dict = self.state_dict()
-        pretrained_model = torch.load(modelf)
-        model_dict.update(pretrained_model)
+        # load pretrained model
+        pretrained_dict = torch.load(modelf)
+        # filter out unnecessary keys
+        pretrained_dict = {k: v for k, v in pretrained_dict.items() if k in model_dict}
+        # update model dict with pretrained model
+        model_dict.update(pretrained_dict)
+        # load the updated model dict into the current model
         self.load_state_dict(model_dict)
         return self
