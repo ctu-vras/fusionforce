@@ -19,8 +19,8 @@ from tqdm import tqdm
 import open3d as o3d
 
 
-monoforce_dir = os.path.realpath(os.path.join(os.path.dirname(__file__), '..', '..', '..'))
-data_dir = os.path.realpath(os.path.join(monoforce_dir, 'data'))
+pkg_dir = os.path.realpath(os.path.join(os.path.dirname(__file__), '..', '..', '..'))
+data_dir = os.path.realpath(os.path.join(pkg_dir, 'data'))
 
 rough_seq_paths = [
         # MARV robot
@@ -73,7 +73,7 @@ class ROUGH(Dataset):
         self.is_train = is_train
 
         if lss_cfg is None:
-            lss_cfg = read_yaml(os.path.join(monoforce_dir, 'config', 'lss_cfg.yaml'))
+            lss_cfg = read_yaml(os.path.join(pkg_dir, 'config', 'lss_cfg.yaml'))
         self.lss_cfg = lss_cfg
         self.grid_res = lss_cfg['grid_conf']['xbound'][2]
 
