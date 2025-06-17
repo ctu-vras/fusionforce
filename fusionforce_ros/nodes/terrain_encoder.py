@@ -283,6 +283,7 @@ class TerrainEncoder:
     def cloud_msg_to_input(self, msg):
         assert isinstance(msg, PointCloud2)
         points = cloud_msg_to_numpy(msg)
+        points = points.reshape((-1, 3))
 
         # transform points to robot frame
         Tr = self.get_transform(from_frame=msg.header.frame_id, to_frame=self.robot_frame)
