@@ -5,11 +5,10 @@ from copy import copy
 from threading import RLock
 import torch
 import numpy as np
-from time import time
 from PIL import Image as PILImage
 from scipy.spatial.transform import Rotation
 
-from fusionforce.ros import height_map_to_gridmap_msg, cloud_msg_to_numpy
+from fusionforce.ros import height_map_to_gridmap_msg, cloud_msg_to_numpy, numpy_to_cloud_msg
 from fusionforce.utils import read_yaml, timing, load_calib
 from fusionforce.models.terrain_encoder.lss import LiftSplatShoot
 from fusionforce.models.terrain_encoder.voxelnet import VoxelNet
@@ -25,7 +24,6 @@ from sensor_msgs.msg import CompressedImage, CameraInfo, PointCloud2
 from message_filters import ApproximateTimeSynchronizer, Subscriber
 import tf2_ros
 from ros_numpy import numpify
-
 
 lib_path = rospkg.RosPack().get_path('fusionforce').replace('fusionforce_ros', 'fusionforce')
 
@@ -63,6 +61,7 @@ class TerrainEncoder:
         self.tf_listener = tf2_ros.TransformListener(self.tf_buffer)
         # grid map publisher
         self.gridmap_pub = rospy.Publisher('/grid_map/terrain', GridMap, queue_size=1)
+        self.pts_pub = rospy.Publisher('/grid_map/points', PointCloud2, queue_size=1)
 
         # lock for processing
         self.proc_lock = RLock()
@@ -326,6 +325,16 @@ class TerrainEncoder:
         grid_msg.info.header.stamp = stamp
         grid_msg.info.header.frame_id = self.robot_frame
         self.gridmap_pub.publish(grid_msg)
+
+        # publish height map as point cloud
+        grid_res = self.lss_cfg['grid_conf']['xbound'][2]
+        H, W = height.shape
+        x_grid = np.arange(-H // 2, H // 2) * grid_res
+        y_grid = np.arange(-W // 2, W // 2) * grid_res
+        x, y = np.meshgrid(x_grid, y_grid, indexing='ij')
+        pts = np.stack([x.ravel(), y.ravel(), height.ravel()], axis=-1)
+        pts_msg = numpy_to_cloud_msg(pts, stamp=stamp, frame_id=self.robot_frame, fields=['x', 'y', 'z'])
+        self.pts_pub.publish(pts_msg)
 
 
 def main():
