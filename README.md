@@ -139,6 +139,9 @@ The module combines the FusionForce Predictor and the Physics Engine into a sing
 It has the same input as the FusionForce Predictor, but also outputs the predicted robot trajectories and their costs,
 as the Physics Engine does.
 
+<img src="./fusionforce/docs/imgs/prediction.png" alt="FusionForce Node" width="1000"/>
+
+The FusionForce prediction example: supporting terrain elavation projected to the robot's camera frames.
 
 ## Citation
 
