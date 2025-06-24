@@ -148,8 +148,8 @@ The FusionForce prediction example: supporting terrain elavation projected to th
 Consider citing the paper if you find the work relevant to your research:
 
 ```bibtex
-@article{agishev2025monoforce,
-  title={MonoForce: Learnable Image-conditioned Physics Engine},
+@article{agishev2025fusionforce,
+  title={FusionForce: End-to-end Differentiable Neural-Symbolic Layer for Trajectory Prediction},
   author={Agishev, Ruslan and Zimmermann, Karel},
   journal={arXiv preprint arXiv:2502.10156},
   year={2025},
