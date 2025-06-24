@@ -1,10 +1,7 @@
-# FusionForce
+# FusionForce: End-to-end Differentiable Neural-Symbolic Layer for Trajectory Prediction
 
 [![Arxiv](http://img.shields.io/badge/paper-arxiv-critical.svg?style=plastic)](https://arxiv.org/abs/2502.10156)
 [![Data](http://img.shields.io/badge/data-ROUGH-blue.svg?style=plastic)](https://drive.google.com/drive/folders/1nli-4YExqcBhl0mPNRUjSiNecX4yIcme?usp=sharing)
-
-FusionForce: End-to-end Differentiable Neural-Symbolic Layer
-for Trajectory Prediction
 
 ## Abstract
 
