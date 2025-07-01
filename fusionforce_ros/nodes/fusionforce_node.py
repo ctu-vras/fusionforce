@@ -9,7 +9,7 @@ from sensor_msgs.msg import CameraInfo, CompressedImage
 from visualization_msgs.msg import MarkerArray
 from nav_msgs.msg import Path
 from std_msgs.msg import Float32MultiArray
-from fusionforce.ros import height_map_to_gridmap_msg, poses_to_path, poses_to_marker
+from fusionforce.ros import height_map_to_gridmap_msg, poses_to_path, poses_to_marker, to_tf
 from fusionforce.utils import read_yaml, timing
 from fusionforce.models.traj_predictor.dphys_config import DPhysConfig
 from fusionforce.models.traj_predictor.dphysics import DPhysics, generate_controls
@@ -137,7 +137,11 @@ class FusionForce(TerrainEncoder):
 
     @timing
     def proc(self, *msgs):
+        stamp = msgs[0].header.stamp
         terrain = self.msgs_to_terrain(msgs)
+
+        # create gravity-aligned frame
+        success = self.create_gravity_aligned_frame(stamp)
 
         height_terrain, friction = terrain['terrain'], terrain['friction']
         rospy.loginfo('Predicted height map shape: %s' % str(height_terrain.shape))
@@ -171,7 +175,7 @@ class FusionForce(TerrainEncoder):
                                              mask=friction.squeeze().cpu().numpy(),
                                              mask_layer_name='friction')
         grid_msg.info.header.stamp = stamp
-        grid_msg.info.header.frame_id = self.robot_frame
+        grid_msg.info.header.frame_id = self.gravity_aligned_frame if success else self.robot_frame
         self.gridmap_pub.publish(grid_msg)
 
 

@@ -8,7 +8,7 @@ import numpy as np
 from PIL import Image as PILImage
 from scipy.spatial.transform import Rotation
 
-from fusionforce.ros import height_map_to_gridmap_msg, cloud_msg_to_numpy, numpy_to_cloud_msg
+from fusionforce.ros import height_map_to_gridmap_msg, cloud_msg_to_numpy, numpy_to_cloud_msg, to_tf
 from fusionforce.utils import read_yaml, timing, load_calib
 from fusionforce.models.terrain_encoder.lss import LiftSplatShoot
 from fusionforce.models.terrain_encoder.voxelnet import VoxelNet
@@ -37,6 +37,7 @@ class TerrainEncoder:
 
         self.robot_frame = rospy.get_param('~robot_frame', 'base_link')
         self.fixed_frame = rospy.get_param('~fixed_frame', 'odom')
+        self.gravity_aligned_frame = self.robot_frame + '_gravity_aligned'
 
         calib_path = rospy.get_param('~calib_path', '')
         self.calib = load_calib(calib_path)
@@ -59,6 +60,7 @@ class TerrainEncoder:
         # tf listener
         self.tf_buffer = tf2_ros.Buffer()
         self.tf_listener = tf2_ros.TransformListener(self.tf_buffer)
+        self.tf_broadcaster = tf2_ros.TransformBroadcaster()
         # grid map publisher
         self.gridmap_pub = rospy.Publisher('/grid_map/terrain', GridMap, queue_size=1)
         self.pts_pub = rospy.Publisher('/grid_map/points', PointCloud2, queue_size=1)
@@ -167,16 +169,23 @@ class TerrainEncoder:
 
         return E, K, D
 
-    def get_transform(self, from_frame, to_frame):
-        time = rospy.Time(0)
+    def get_transform(self, from_frame, to_frame, stamp=None):
+        if stamp is None:
+            stamp = rospy.Time.now()  # Use latest available time
         timeout = rospy.Duration.from_sec(1.0)
         try:
-            tf = self.tf_buffer.lookup_transform(to_frame, from_frame, time, timeout)
-        except Exception as ex:
-            rospy.logerr('Could not transform from %s to %s: %s.', from_frame, to_frame, ex)
-            raise ex
-
-        return np.array(numpify(tf.transform), dtype=np.float32).reshape((4, 4))
+            tf = self.tf_buffer.lookup_transform(to_frame, from_frame, stamp, timeout)
+        except (tf2_ros.LookupException,
+                tf2_ros.ConnectivityException,
+                tf2_ros.ExtrapolationException) as ex:
+            rospy.logwarn('TF lookup failed [%s -> %s] at time %.3f: %s',
+                          from_frame, to_frame, stamp.to_sec(), str(ex))
+            return None  # or raise ex if you prefer
+        mat = np.array(numpify(tf.transform), dtype=np.float32)
+        if mat.size != 16:
+            rospy.logerr("Invalid transform size from %s to %s", from_frame, to_frame)
+            return None
+        return mat.reshape((4, 4))
 
     def get_cam_calib_from_info_msg(self, msg):
         """
@@ -312,18 +321,39 @@ class TerrainEncoder:
             raise RuntimeError(f'Unknown model {self.model}. Supported are lss, voxelnet, and bevfusion.')
         return terrain
 
+    def create_gravity_aligned_frame(self, stamp):
+        robot_pose = self.get_transform(from_frame=self.robot_frame, to_frame=self.fixed_frame)
+        if robot_pose is None:
+            rospy.logwarn('Could not get robot pose, skipping gravity-aligned frame creation')
+            return False
+        roll, pitch, yaw = Rotation.from_matrix(robot_pose[:3, :3]).as_euler('xyz')
+        R = Rotation.from_euler('xyz', [0, 0, yaw]).as_matrix()
+        robot_pose_aligned = np.eye(4, dtype=np.float32)
+        robot_pose_aligned[:3, :3] = R
+        robot_pose_aligned[:3, 3] = robot_pose[:3, 3]
+        # publish transform to tf
+        tf_msg = to_tf(pose=robot_pose_aligned,
+                       frame_id=self.fixed_frame,
+                       child_frame_id=self.gravity_aligned_frame,
+                       stamp=stamp)
+        self.tf_broadcaster.sendTransform(tf_msg)
+        return True
+
     def proc(self, *msgs):
+        stamp = msgs[0].header.stamp
         terrain = self.msgs_to_terrain(msgs)
+        # create gravity-aligned frame
+        success = self.create_gravity_aligned_frame(stamp)
 
         # publish height map as grid map
         height_terrain, friction = terrain['terrain'], terrain['friction']
         rospy.loginfo('Predicted height map shape: %s' % str(height_terrain.shape))
-        stamp = msgs[0].header.stamp
         height = height_terrain.squeeze().cpu().numpy()
         grid_msg = height_map_to_gridmap_msg(height, grid_res=self.lss_cfg['grid_conf']['xbound'][2],
                                              xyz=np.array([0., 0., 0.]), q=np.array([0., 0., 0., 1.]))
+
         grid_msg.info.header.stamp = stamp
-        grid_msg.info.header.frame_id = self.robot_frame
+        grid_msg.info.header.frame_id = self.gravity_aligned_frame if success else self.robot_frame
         self.gridmap_pub.publish(grid_msg)
 
         # publish height map as point cloud
