@@ -211,8 +211,11 @@ class TerrainEncoder:
         assert len(img_msgs) == len(info_msgs)
 
         robot_pose = self.get_transform(from_frame=self.robot_frame, to_frame=self.fixed_frame)
-        roll, pitch, yaw = Rotation.from_matrix(robot_pose[:3, :3]).as_euler('xyz')
-        R = Rotation.from_euler('xyz', [roll, pitch, 0]).as_matrix()
+        if robot_pose is None:
+            R = np.eye(3, dtype=np.float32)  # no rotation if pose is not available
+        else:
+            roll, pitch, yaw = Rotation.from_matrix(robot_pose[:3, :3]).as_euler('xyz')
+            R = Rotation.from_euler('xyz', [roll, pitch, 0]).as_matrix()
 
         imgs = []
         post_rots = []
@@ -325,6 +328,14 @@ class TerrainEncoder:
         return terrain
 
     def create_gravity_aligned_frame(self, stamp):
+        """
+        Create a gravity-aligned frame based on the robot's pose.
+        This frame is aligned with the robot's heading and the gravity direction.
+        It is used to publish the height map in a frame that is aligned with the ground.
+
+        :param stamp: timestamp for the transform
+        :return: True if the frame was created successfully, False otherwise
+        """
         robot_pose = self.get_transform(from_frame=self.robot_frame, to_frame=self.fixed_frame)
         if robot_pose is None:
             rospy.logwarn('Could not get robot pose, skipping gravity-aligned frame creation')
