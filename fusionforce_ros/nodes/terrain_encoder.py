@@ -298,8 +298,11 @@ class TerrainEncoder:
 
         # convert points to gravity-aligned frame
         robot_pose = self.get_transform(from_frame=self.robot_frame, to_frame=self.fixed_frame)
-        roll, pitch, yaw = Rotation.from_matrix(robot_pose[:3, :3]).as_euler('xyz')
-        R = Rotation.from_euler('xyz', [roll, pitch, 0]).as_matrix()
+        if robot_pose is None:
+            R = np.eye(3, dtype=np.float32)  # no rotation if pose is not available
+        else:
+            roll, pitch, yaw = Rotation.from_matrix(robot_pose[:3, :3]).as_euler('xyz')
+            R = Rotation.from_euler('xyz', [roll, pitch, 0]).as_matrix()
         points = points @ R.T  # rotate points to align with gravity
 
         points_input = torch.as_tensor(points, dtype=torch.float32).to(self.device)
