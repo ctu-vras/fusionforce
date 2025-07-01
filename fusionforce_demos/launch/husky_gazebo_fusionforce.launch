@@ -41,6 +41,8 @@
                                            ]"/>
 <!--        <arg name="map_frame" value="map"/>      -->
        <arg name="map_frame" value="odom"/>
+       <arg name="waypoint_weight" value="2.0"/>
+       <arg name="path_weight" value="1.0"/>
     </include>
 
     <!-- Path follower -->

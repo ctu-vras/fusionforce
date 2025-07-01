@@ -355,7 +355,9 @@ class TerrainEncoder:
 
     def proc(self, *msgs):
         stamp = msgs[0].header.stamp
+        # predict terrain from messages
         terrain = self.msgs_to_terrain(msgs)
+
         # create gravity-aligned frame
         success = self.create_gravity_aligned_frame(stamp)
 

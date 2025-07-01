@@ -12,13 +12,7 @@ from message_filters import ApproximateTimeSynchronizer, Subscriber
 import tf2_ros
 from ros_numpy import numpify
 from scipy.spatial.transform import Rotation
-
-
-def normalize(v):
-    norm = np.linalg.norm(v)
-    if norm == 0:
-        return v
-    return v / norm
+from fusionforce.utils import normalize
 
 
 class PathSelector:
@@ -67,7 +61,7 @@ class PathSelector:
         self.subs.append(Subscriber(self.paths_topic, MarkerArray))
         rospy.loginfo('Subscribing to %s' % self.path_costs_topic)
         self.subs.append(Subscriber(self.path_costs_topic, Float32MultiArray))
-        self.sync = ApproximateTimeSynchronizer(self.subs, queue_size=1, slop=self.max_msgs_delay, allow_headerless=True)
+        self.sync = ApproximateTimeSynchronizer(self.subs, queue_size=10, slop=self.max_msgs_delay, allow_headerless=True)
         self.sync.registerCallback(self.path_selection_callback)
         rospy.loginfo('Starting waypoint distance timer')
         self.wp_dist_timer = rospy.Timer(rospy.Duration(0.1), self.wp_dist_callback)
@@ -246,7 +240,13 @@ class PathSelector:
         assert np.all(path_costs >= 0)
 
         # select path with minimum distance to waypoint and cost
-        costs = self.waypoint_weight * normalize(path_dists_to_wp) + self.path_weight * normalize(path_costs)
+        normalized_dists = normalize(path_dists_to_wp)
+        normalized_costs = normalize(path_costs)
+        costs = self.waypoint_weight * normalized_dists + self.path_weight * normalized_costs
+        rospy.logdebug(f'Normalized distances: {normalized_dists}')
+        rospy.logdebug(f'Normalized path costs: {normalized_costs}')
+        rospy.logdebug(f'Final cost vector: {costs}')
+
         selected_path_id = np.argmin(costs)
         selected_path_closest_point_id = closest_point_ids[selected_path_id]
         if self.waypoint_weight <= 0.0:
