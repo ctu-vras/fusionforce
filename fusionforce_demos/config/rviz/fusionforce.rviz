@@ -7,10 +7,13 @@ Panels:
         - /Global Options1
         - /Status1
         - /Sensors1
+        - /Sensors1/Camera Front1/Visibility1
+        - /Sensors1/Camera Left1/Visibility1
+        - /Sensors1/Camera Rear1/Visibility1
         - /Sensors1/Camera Right1/Visibility1
         - /Traversability1
         - /Diff Physics1
-      Splitter Ratio: 0.5
+      Splitter Ratio: 0.7323529124259949
     Tree Height: 618
   - Class: rviz/Selection
     Name: Selection
@@ -283,9 +286,9 @@ Visualization Manager:
               Current Waypoint: true
               Robot Control Markers: true
               Selected Path: true
-              TFTrajectory: true
-              Value: false
-              Waypoints Route: true
+              TFTrajectory: false
+              Value: true
+              Waypoints Route: false
             RobotModel: false
             Sensors:
               Camera Left: true
@@ -322,9 +325,9 @@ Visualization Manager:
               Current Waypoint: true
               Robot Control Markers: true
               Selected Path: true
-              TFTrajectory: true
-              Value: false
-              Waypoints Route: true
+              TFTrajectory: false
+              Value: true
+              Waypoints Route: false
             RobotModel: false
             Sensors:
               Camera Front: true
@@ -361,9 +364,9 @@ Visualization Manager:
               Current Waypoint: true
               Robot Control Markers: true
               Selected Path: true
-              TFTrajectory: true
-              Value: false
-              Waypoints Route: true
+              TFTrajectory: false
+              Value: true
+              Waypoints Route: false
             RobotModel: false
             Sensors:
               Camera Front: true
@@ -400,9 +403,9 @@ Visualization Manager:
               Current Waypoint: true
               Robot Control Markers: true
               Selected Path: true
-              TFTrajectory: true
-              Value: false
-              Waypoints Route: true
+              TFTrajectory: false
+              Value: true
+              Waypoints Route: false
             RobotModel: false
             Sensors:
               Camera Front: true
@@ -634,7 +637,7 @@ Visualization Manager:
       Near Clip Distance: 2
       Pitch: 0.7853981852531433
       Target Frame: base_link
-      Yaw: 3.1414999961853027
+      Yaw: 0.7853981852531433
     Saved:
       - Class: rviz/ThirdPersonFollower
         Distance: 8.333333015441895

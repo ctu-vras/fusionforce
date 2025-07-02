@@ -6,7 +6,7 @@
          doc="Path topic to follow."/>
     <arg name="points" default="points_slow_filtered"/>
     <arg name="keep_path" default="2."/>
-    <arg name="map_frame" default="map"/>
+    <arg name="fixed_frame" default="map"/>
     <arg name="odom_frame" default="odom"/>
     <arg name="robot_frame" default="base_link"/>
     <arg name="max_age" default="1.0"/>
@@ -19,7 +19,7 @@
           respawn="true" respawn_delay="1.0" output="screen">
 
         <rosparam subst_value="true">
-            map_frame: $(arg map_frame)
+            fixed_frame: $(arg fixed_frame)
             odom_frame: $(arg odom_frame)
             robot_frame: $(arg robot_frame)
             control_freq: 10.0

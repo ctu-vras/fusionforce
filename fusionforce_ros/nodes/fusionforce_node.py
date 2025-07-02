@@ -5,7 +5,6 @@ import torch
 import numpy as np
 from scipy.spatial.transform import Rotation
 import rospy
-from sensor_msgs.msg import CameraInfo, CompressedImage
 from visualization_msgs.msg import MarkerArray
 from nav_msgs.msg import Path
 from std_msgs.msg import Float32MultiArray
@@ -15,11 +14,12 @@ from fusionforce.models.traj_predictor.dphys_config import DPhysConfig
 from fusionforce.models.traj_predictor.dphysics import DPhysics, generate_controls
 from terrain_encoder import TerrainEncoder
 import rospkg
+from fusionforce.utils import normalize
 
 
 class FusionForce(TerrainEncoder):
     """
-    FusionForce node for predicting terrain properties and robot's trajectories from RGB images.
+    FusionForce node for predicting terrain properties and robot's trajectories from sensor data.
     """
     def __init__(self, lss_cfg):
         super(FusionForce, self).__init__(lss_cfg)
@@ -29,8 +29,6 @@ class FusionForce(TerrainEncoder):
         self.physics_engine = DPhysics(self.dphys_cfg, device=self.device)
         self.controls = self.init_controls()
         rospy.loginfo('Control inputs are set up. Shape: %s' % str(self.controls.shape))
-        self.path_cost_min = np.inf
-        self.path_cost_max = -np.inf
         self.pose_step = int(0.5 / self.dphys_cfg.dt)  # publish poses with 0.2 [sec] step
 
         self.sampled_paths_pub = rospy.Publisher('/sampled_paths', MarkerArray, queue_size=1)
@@ -83,13 +81,19 @@ class FusionForce(TerrainEncoder):
         poses[:, :, 3, 3] = 1.0
         assert not torch.any(torch.isnan(poses))
 
-        # compute path costs
-        F_springs, F_frictions = forces
-        assert F_springs.shape == (self.dphys_cfg.n_sim_trajs, n_sim_steps, len(self.dphys_cfg.robot_points), 3)
-        assert F_frictions.shape == (self.dphys_cfg.n_sim_trajs, n_sim_steps, len(self.dphys_cfg.robot_points), 3)
-        path_costs = torch.norm(F_springs, dim=-1).std(dim=-1).std(dim=-1)
-        assert not torch.any(torch.isnan(path_costs))
-        assert poses.shape == (self.dphys_cfg.n_sim_trajs, n_sim_steps, 4, 4)
+        # # compute path costs: standard deviation of spring forces
+        # F_springs, F_frictions = forces
+        # assert F_springs.shape == (self.dphys_cfg.n_sim_trajs, n_sim_steps, len(self.dphys_cfg.robot_points), 3)
+        # assert F_frictions.shape == (self.dphys_cfg.n_sim_trajs, n_sim_steps, len(self.dphys_cfg.robot_points), 3)
+        # path_costs = torch.norm(F_springs, dim=-1).std(dim=-1).std(dim=-1)
+        # assert not torch.any(torch.isnan(path_costs))
+        # assert poses.shape == (self.dphys_cfg.n_sim_trajs, n_sim_steps, 4, 4)
+
+        # compute path costs: inclination-based
+        Rs_pred = states[2].cpu().reshape(-1, 3, 3)  # (n_trajs * time_horizon, 3, 3)
+        rpy = torch.as_tensor(Rotation.from_matrix(Rs_pred).as_euler('xyz'))  # (n_trajs * time_horizon, 3)
+        roll, pitch = rpy[:, 0].reshape(self.dphys_cfg.n_sim_trajs, -1), rpy[:, 1].reshape(self.dphys_cfg.n_sim_trajs, -1)  # (n_trajs, time_horizon)
+        path_costs = roll.abs().mean(dim=-1) + pitch.abs().mean(dim=-1)  # (n_trajs,)
         assert path_costs.shape == (self.dphys_cfg.n_sim_trajs,)
 
         return poses, path_costs
@@ -105,7 +109,7 @@ class FusionForce(TerrainEncoder):
         marker_array = MarkerArray()
         red = np.array([1., 0., 0.])
         green = np.array([0., 1., 0.])
-        path_costs_norm = (path_costs - self.path_cost_min) / (self.path_cost_max - self.path_cost_min)
+        path_costs_norm = normalize(path_costs)
         for i in range(num_trajs):
             # map path cost to color (lower cost -> greener, higher cost -> redder)
             color = green + (red - green) * path_costs_norm[i]
@@ -137,31 +141,20 @@ class FusionForce(TerrainEncoder):
 
     @timing
     def proc(self, *msgs):
+        stamp = msgs[0].header.stamp
+        # predict terrain properties from sensor messages
         terrain = self.msgs_to_terrain(msgs)
-
         height_terrain, friction = terrain['terrain'], terrain['friction']
         rospy.loginfo('Predicted height map shape: %s' % str(height_terrain.shape))
 
+        # create gravity-aligned frame
+        success = self.create_gravity_aligned_frame(stamp)
+
+        # predict paths using differentiable physics
         grid_maps = height_terrain.squeeze(1).repeat(self.dphys_cfg.n_sim_trajs, 1, 1)
         frictions = friction.squeeze(1).repeat(self.dphys_cfg.n_sim_trajs, 1, 1)
         xyz_qs_init = torch.tensor([[0., 0., 0., 0., 0., 0., 1.]]).repeat(self.dphys_cfg.n_sim_trajs, 1)
         xyz_qs, path_costs = self.predict_paths(grid_maps, xyz_qs_init, frictions)
-
-        # update path cost bounds
-        if path_costs is not None:
-            self.path_cost_min = min(self.path_cost_min, torch.min(path_costs).item())
-            self.path_cost_max = max(self.path_cost_max, torch.max(path_costs).item())
-            rospy.logdebug('Path cost min: %.3f' % self.path_cost_min)
-            rospy.logdebug('Path cost max: %.3f' % self.path_cost_max)
-
-        # publish paths
-        stamp = msgs[0].header.stamp
-        if xyz_qs is not None:
-            xyz_qs_np = xyz_qs.cpu().numpy()
-            path_costs_np = path_costs.cpu().numpy()
-            self.publish_paths_and_costs(xyz_qs_np, path_costs_np, stamp=stamp,
-                                         frame=self.robot_frame, pose_step=self.pose_step)
-            rospy.loginfo(f'Published paths (shape: {xyz_qs_np.shape}) and path costs (shape: {path_costs_np.shape})')
 
         # publish height map as grid map
         grid_msg = height_map_to_gridmap_msg(height=height_terrain.squeeze().cpu().numpy(),
@@ -171,8 +164,16 @@ class FusionForce(TerrainEncoder):
                                              mask=friction.squeeze().cpu().numpy(),
                                              mask_layer_name='friction')
         grid_msg.info.header.stamp = stamp
-        grid_msg.info.header.frame_id = self.robot_frame
+        grid_msg.info.header.frame_id = self.gravity_aligned_frame if success else self.robot_frame
         self.gridmap_pub.publish(grid_msg)
+
+        # publish paths
+        if xyz_qs is not None:
+            xyz_qs_np = xyz_qs.cpu().numpy()
+            path_costs_np = path_costs.cpu().numpy()
+            self.publish_paths_and_costs(xyz_qs_np, path_costs_np, stamp=stamp,
+                                         frame=self.robot_frame, pose_step=self.pose_step)
+            rospy.loginfo(f'Published paths (shape: {xyz_qs_np.shape}) and path costs (shape: {path_costs_np.shape})')
 
 
 def main():

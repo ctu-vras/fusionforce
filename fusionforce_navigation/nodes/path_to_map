@@ -48,7 +48,7 @@ class Path2Map(object):
     def __init__(self):
         self.input = rospy.get_param('~input', 'path')
         self.output = rospy.get_param('~output', 'path_map')
-        self.map_frame = rospy.get_param('~map_frame', 'map')
+        self.fixed_frame = rospy.get_param('~fixed_frame', 'map')
         self.robot_frame = rospy.get_param('~robot_frame', 'base_link')
         self.path_pub = rospy.Publisher(name=self.output, data_class=Path, queue_size=1)
         self.tf = tf2_ros.Buffer()
@@ -63,14 +63,14 @@ class Path2Map(object):
         rospy.loginfo('Received path')
         # transform path to map frame
         try:
-            transform = self.get_robot_pose(self.map_frame)
+            transform = self.get_robot_pose(self.fixed_frame)
         except tf2_ros.LookupException as ex:
-            rospy.logwarn(f'No transform from {self.robot_frame} to {self.map_frame} due to {ex}')
+            rospy.logwarn(f'No transform from {self.robot_frame} to {self.fixed_frame} due to {ex}')
             return
         rospy.loginfo('Publishing path')
         path_output = transform_path(path_input, transform)
         path_output.header.stamp = path_input.header.stamp
-        path_output.header.frame_id = self.map_frame
+        path_output.header.frame_id = self.fixed_frame
         self.path_pub.publish(path_output)
 
 

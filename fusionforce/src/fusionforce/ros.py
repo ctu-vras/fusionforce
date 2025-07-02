@@ -126,6 +126,17 @@ def cloud_msg_to_numpy(msg):
     points = structured_to_unstructured(cloud[['x', 'y', 'z']])
     return points
 
+def numpy_to_cloud_msg(cloud, stamp=None, frame_id=None, fields=None):
+    assert isinstance(cloud, np.ndarray)
+    assert cloud.ndim == 2
+    assert cloud.shape[1] >= 3
+    if fields is None:
+        fields = ['x', 'y', 'z']
+    # https://answers.ros.org/question/197309/rviz-does-not-display-pointcloud2-if-encoding-not-float32/
+    cloud = np.asarray(cloud, dtype=np.float32)
+    cloud_struct = unstructured_to_structured(cloud, names=fields)
+    return msgify(PointCloud2, cloud_struct, stamp=stamp, frame_id=frame_id)
+
 def to_pose_array(poses, stamp=None, frame_id=None):
     assert isinstance(poses, np.ndarray) or isinstance(poses, torch.Tensor)
     assert poses.shape[1:] == (4, 4)

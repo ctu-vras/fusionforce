@@ -1,24 +1,24 @@
 <?xml version="1.0" encoding="UTF-8" ?>
 <launch>
     <arg name="robot_frame" default="base_link"/>
-    <arg name="map_frame" default="map"/>
+    <arg name="fixed_frame" default="map"/>
     <arg name="input_paths" default="sampled_paths"/>
     <arg name="input_path_costs" default="path_costs"/>
     <arg name="output_path" default="selected_path"/>
-    <arg name="waypoint_weight" default="1.0"/>
+    <arg name="waypoint_weight" default="2.0"/>
     <arg name="path_weight" default="1.0"/>
-    <arg name="waypoints_list" default="[[0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0]]"/>
+    <arg name="waypoints_yaml" default="$(dirname)/../config/waypoints.yaml"/>
 
     <node name="path_selector" pkg="fusionforce_navigation" type="path_selector" output="screen">
         <rosparam subst_value="true">
             robot_frame: $(arg robot_frame)
-            map_frame: $(arg map_frame)
+            fixed_frame: $(arg fixed_frame)
             paths_topic: $(arg input_paths)
             path_costs_topic: $(arg input_path_costs)
             selected_path_topic: $(arg output_path)
             waypoint_weight: $(arg waypoint_weight)
             path_weight: $(arg path_weight)
-            waypoints_list: $(arg waypoints_list)
+            waypoints_yaml: $(arg waypoints_yaml)
             wp_lookahead_dist: 10.0
             waypoint_reached_dist: 1.0
         </rosparam>

@@ -11,15 +11,18 @@
                                              '/camera_right/camera_info']"/>
     <arg name="cloud_topic" default="/points" doc="Point cloud topic to be used by FusionForce"/>
     <arg name="terrain_encoder" default="lss" doc="Terrain encoder type: lss, voxelnet, bevfusion"/>
+    <arg name="robot_frame" default="base_link" doc="Frame of the robot"/>
+    <arg name="fixed_frame" default="map" doc="Fixed frame for the height map"/>
 
-    <!-- fusionforce node -->
+    <!-- FusionForce node -->
     <node name="fusionforce" pkg="fusionforce" type="fusionforce_node.py" output="screen">
         <rosparam subst_value="true">
             img_topics: $(arg img_topics)
             camera_info_topics: $(arg camera_info_topics)
             cloud_topic: $(arg cloud_topic)
             terrain_encoder: $(arg terrain_encoder)
-            robot_frame: 'base_link'
+            robot_frame: $(arg robot_frame)
+            fixed_frame: $(arg fixed_frame)
             max_msgs_delay: 0.2
             max_age: 1.2
             robot: $(arg robot)
