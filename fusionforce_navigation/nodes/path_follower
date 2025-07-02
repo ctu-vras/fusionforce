@@ -67,7 +67,7 @@ def e2p(x):
 class PathFollower(object):
     def __init__(self):
         self.obstacle_avoidance = rospy.get_param('~obstacle_avoidance', True)
-        self.map_frame = rospy.get_param('~map_frame', 'map')
+        self.fixed_frame = rospy.get_param('~fixed_frame', 'map')
         self.odom_frame = rospy.get_param('~odom_frame', 'odom')            # No-wait frame
         self.robot_frame = rospy.get_param('~robot_frame', 'base_footprint')
         self.control_freq = rospy.get_param('~control_freq', 10.0)
@@ -187,13 +187,13 @@ class PathFollower(object):
 
         if not msg.header.frame_id:
             rospy.logwarn_once('Map frame %s will be used instead of empty path frame.',
-                               self.map_frame)
-            msg.header.frame_id = self.map_frame
-        # elif not self.map_frame:
-        #     self.map_frame = msg.header.frame_id
-        elif self.map_frame and msg.header.frame_id != self.map_frame:
+                               self.fixed_frame)
+            msg.header.frame_id = self.fixed_frame
+        # elif not self.fixed_frame:
+        #     self.fixed_frame = msg.header.frame_id
+        elif self.fixed_frame and msg.header.frame_id != self.fixed_frame:
             rospy.logwarn_once('Map frame %s will be used instead of path frame %s.',
-                               self.map_frame, msg.header.frame_id)
+                               self.fixed_frame, msg.header.frame_id)
 
         # Discard old messages.
         age = (rospy.Time.now() - msg.header.stamp).to_sec()
@@ -243,12 +243,12 @@ class PathFollower(object):
             rospy.logwarn('Discarding cloud %.1f s > %.1f s old.', age, self.max_age)
             return
 
-        path_frame = self.map_frame
+        path_frame = self.fixed_frame
         # with self.path_lock:
         #     if self.path_msg:
         #         path_frame = self.path_msg.header.frame_id
         # if not path_frame:
-        #     path_frame = self.map_frame
+        #     path_frame = self.fixed_frame
         # if not path_frame:
         #     rospy.loginfo('Could not obtain path frame, discarding cloud.')
         #     return
@@ -448,7 +448,7 @@ class PathFollower(object):
             idle_duration = (rospy.Time.now() - self.idle_since).to_sec()
             if idle_duration >= self.backtrack_after:
                 path = Path()
-                path.header.frame_id = self.map_frame
+                path.header.frame_id = self.fixed_frame
                 path.header.stamp = rospy.Time.now()
                 path.poses = [PoseStamped(path.header, pose) for pose in reversed(self.path_traversed)]
                 rospy.logwarn('Backtracking due to long inactivity.')
@@ -476,7 +476,7 @@ class PathFollower(object):
         try:
             t = timer()
             with self.path_lock:
-                pose_msg = self.get_robot_pose(self.map_frame)
+                pose_msg = self.get_robot_pose(self.fixed_frame)
                 cur_pos = numpify(pose_msg.position)
                 prev_pos = numpify(self.path_traversed[0].position) if len(self.path_traversed) > 0 else None
                 if prev_pos is None or np.linalg.norm(cur_pos - prev_pos) > 0.1:

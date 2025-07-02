@@ -2,7 +2,6 @@
 
 <launch>
   <arg name="rviz" default="true" doc="Launch RViz for data visualization or not"/>
-  <arg name="fixed_frame" default="odom" doc="Fixed frame for TFs"/>
   <arg name="bag" doc="Path to a bag file"/>
 
   <!-- Play bag file -->
