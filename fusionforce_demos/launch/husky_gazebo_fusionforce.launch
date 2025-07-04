@@ -10,6 +10,16 @@
         <arg name="world" value="$(arg world)"/>
         <arg name="gui" value="$(arg gui)"/>
     </include>
+
+    <!-- Waypoints route publisher -->
+    <node pkg="fusionforce_navigation" type="path_publisher" name="path_publisher" output="screen">
+        <rosparam subst_value="true">
+            yaml_path: $(find fusionforce_navigation)/config/waypoints.yaml
+            fixed_frame: $(arg fixed_frame)
+            period: 1.0
+        </rosparam>
+        <remap from="/waypoints_route" to="/waypoints_route"/>
+    </node>
     
     <!-- FusionForce -->
     <include file="$(find fusionforce)/launch/fusionforce.launch">
@@ -34,8 +44,6 @@
 
     <!-- Path selector -->
     <include file="$(find fusionforce_navigation)/launch/path_selector.launch">
-        <!-- x, y, z, qx, qy, qz, qw -->
-        <arg name="waypoints_yaml" value="$(find fusionforce_navigation)/config/waypoints.yaml"/>
        <arg name="fixed_frame" value="$(arg fixed_frame)"/>
     </include>
 

@@ -10,7 +10,7 @@ from numpy.lib.recfunctions import unstructured_to_structured
 from fusionforce.datasets import FusionROUGH
 from fusionforce.models.traj_predictor.dphys_config import DPhysConfig
 from fusionforce.models.traj_predictor.dphysics import DPhysics, generate_controls
-from fusionforce.ros import height_map_to_gridmap_msg, poses_to_path, to_tf, xyz_to_point
+from fusionforce.ros import height_map_to_gridmap_msg, array_to_path, to_tf, xyz_to_point
 from fusionforce.models.terrain_encoder.lss import LiftSplatShoot
 from fusionforce.models.terrain_encoder.voxelnet import VoxelNet
 from fusionforce.models.terrain_encoder.bevfusion import BEVFusion
@@ -272,8 +272,8 @@ class FusionForce:
                 robot_points = self.dphys_cfg.robot_points.cpu().numpy()
                 rospy.logdebug('Robot contact points shape: %s' % str(robot_points.shape))
                 # publish paths
-                path_msg = poses_to_path(poses, frame_id=self.robot_initial_frame, stamp=stamp)
-                path_gt_msg = poses_to_path(poses_gt, frame_id=self.robot_initial_frame, stamp=stamp)
+                path_msg = array_to_path(poses, frame_id=self.robot_initial_frame, stamp=stamp)
+                path_gt_msg = array_to_path(poses_gt, frame_id=self.robot_initial_frame, stamp=stamp)
                 self.path_pub.publish(path_msg)
                 self.path_gt_pub.publish(path_gt_msg)
 

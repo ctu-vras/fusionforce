@@ -9,7 +9,7 @@ import tf2_ros
 from geometry_msgs.msg import TransformStamped
 from fusionforce.models.traj_predictor.dphys_config import DPhysConfig
 from fusionforce.models.traj_predictor.dphysics import DPhysics, generate_controls
-from fusionforce.ros import poses_to_marker, poses_to_path, gridmap_msg_to_numpy
+from fusionforce.ros import poses_to_marker, array_to_path, gridmap_msg_to_numpy
 from fusionforce.transformations import pose_to_xyz_q
 from nav_msgs.msg import Path
 from grid_map_msgs.msg import GridMap
@@ -130,7 +130,7 @@ class DiffPhysBase:
         # rospy.logdebug('Min path cost: %.3f' % path_costs[lower_cost_traj_i])
         # rospy.logdebug('Max path cost: %.3f' % np.max(path_costs))
         rospy.loginfo('Publishing lower cost path of length: %d' % len(lower_cost_xyz_q[::pose_step]))
-        path_msg = poses_to_path(lower_cost_xyz_q[::pose_step], stamp=stamp, frame_id=self.gridmap_frame)
+        path_msg = array_to_path(lower_cost_xyz_q[::pose_step], stamp=stamp, frame_id=self.gridmap_frame)
         self.lc_path_pub.publish(path_msg)
 
         # publish path costs

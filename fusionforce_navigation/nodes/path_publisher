@@ -1,0 +1,74 @@
+#!/usr/bin/env python
+
+import numpy as np
+from fusionforce.ros import array_to_path
+import yaml
+import os
+import rospy
+from nav_msgs.msg import Path
+
+
+def get_waypoints_from_yaml(yaml_path):
+    """
+    Read waypoints from a YAML file.
+    :param yaml_path: path to the YAML file
+    :return: list of waypoints, each waypoint is a list of [x, y, z, qx, qy, qz, qw]
+
+    Data:
+    waypoints:
+      - name: "WP1"
+      xyzq: [x, y, z, qx, qy, qz, qw]
+    """
+    if not os.path.exists(yaml_path):
+        return []
+    with open(yaml_path, 'r') as f:
+        data = yaml.safe_load(f)
+    waypoints = [wp['xyzq'] for wp in data['waypoints']]
+    return waypoints
+
+
+class PathPublisher:
+    """A ROS node that publishes a path constructed from waypoints defined in a YAML file.
+    The waypoints are expected to be in the format:
+    - name: "WP1"
+      xyzq: [x, y, z, qx, qy, qz, qw]
+    """
+
+    def __init__(self):
+        self.yaml_path = rospy.get_param('~yaml_path', 'waypoints.yaml')
+        rospy.loginfo('Reading waypoints from YAML %s', self.yaml_path)
+        self.fixed_frame = rospy.get_param('~fixed_frame', 'map')
+        self.period = rospy.get_param('~period', 1.0)  # seconds
+
+        self.waypoints = np.asarray(get_waypoints_from_yaml(self.yaml_path))
+        self.path_pub = rospy.Publisher('waypoints_route', Path, queue_size=1)
+        self.timer = rospy.Timer(rospy.Duration(self.period), self.publish_path)
+
+    def publish_path(self, event):
+        """
+        Publish the path constructed from waypoints.
+        """
+        if self.waypoints is None:
+            rospy.logwarn("No waypoints found to publish.")
+            path = Path()
+        else:
+            # Convert waypoints to a Path message
+            path = array_to_path(self.waypoints, frame_id=self.fixed_frame, stamp=rospy.Time.now())
+            # rospy.loginfo('Publishing path %s', path)
+        self.path_pub.publish(path)
+
+    def spin(self):
+        try:
+            rospy.spin()
+        except rospy.ROSInterruptException:
+            pass
+
+
+def main():
+    rospy.init_node('path_publisher', anonymous=True)
+    node = PathPublisher()
+    node.spin()
+
+
+if __name__ == '__main__':
+    main()

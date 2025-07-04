@@ -149,7 +149,7 @@ def to_pose_array(poses, stamp=None, frame_id=None):
     return pose_array
 
 
-def poses_to_path(poses, stamp=None, frame_id=None):
+def array_to_path(poses, stamp=None, frame_id=None):
     assert isinstance(poses, np.ndarray) or isinstance(poses, torch.Tensor)
     assert poses.ndim == 3 or poses.ndim == 2
     n_poses = poses.shape[0]
@@ -180,6 +180,17 @@ def poses_to_path(poses, stamp=None, frame_id=None):
             pose.pose.orientation.w = poses[i, 6]
         path.poses.append(pose)
     return path
+
+def path_to_array(path):
+    assert isinstance(path, Path)
+    n_poses = len(path.poses)
+    poses = np.zeros((n_poses, 7), dtype=np.float32)
+    for i in range(n_poses):
+        xyz = numpify(path.poses[i].pose.position)
+        q = numpify(path.poses[i].pose.orientation)
+        poses[i, :3] = xyz
+        poses[i, 3:] = q
+    return poses
 
 def transform_path(path, pose):
     assert isinstance(path, Path)

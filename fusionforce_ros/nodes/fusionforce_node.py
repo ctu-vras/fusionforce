@@ -8,7 +8,7 @@ import rospy
 from visualization_msgs.msg import MarkerArray
 from nav_msgs.msg import Path
 from std_msgs.msg import Float32MultiArray
-from fusionforce.ros import height_map_to_gridmap_msg, poses_to_path, poses_to_marker
+from fusionforce.ros import height_map_to_gridmap_msg, array_to_path, poses_to_marker
 from fusionforce.utils import read_yaml, timing
 from fusionforce.models.traj_predictor.dphys_config import DPhysConfig
 from fusionforce.models.traj_predictor.dphysics import DPhysics, generate_controls
@@ -131,7 +131,7 @@ class FusionForce(TerrainEncoder):
         # rospy.logdebug('Min path cost: %.3f' % path_costs[lower_cost_traj_i])
         # rospy.logdebug('Max path cost: %.3f' % np.max(path_costs))
         rospy.loginfo('Publishing lower cost path of length: %d' % len(lower_cost_xyz_q[::pose_step]))
-        path_msg = poses_to_path(lower_cost_xyz_q[::pose_step], stamp=stamp, frame_id=self.robot_frame)
+        path_msg = array_to_path(lower_cost_xyz_q[::pose_step], stamp=stamp, frame_id=self.robot_frame)
         self.lc_path_pub.publish(path_msg)
 
         # publish path costs
